@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Monitorr Dashboard</title>
+		<link
+			rel="stylesheet"
+			href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+		/>
+		<link
+			rel="stylesheet"
+			href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css"
+		/>
+		<link
+			rel="stylesheet"
+			href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css"
+		/>
+		<link
+			href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+			rel="stylesheet"
+		/>
+		<link
+			href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+			rel="stylesheet"
+		/>
+		<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+		<link rel="stylesheet" href="/css/style.css" />
+	</head>
+	<body class="auth-pending">
+		<div id="toast-container"></div>
+
+		<header>
+			<div class="brand"><i class="fas fa-satellite-dish"></i> Monitorr</div>
+			<div class="nav-pills">
+				<button
+					id="nav-map"
+					class="nav-item active"
+					onclick="switchView('map')"
+				>
+					<i class="fas fa-map"></i> Map
+				</button>
+				<button id="nav-list" class="nav-item" onclick="switchView('list')">
+					<i class="fas fa-server"></i> Manage Node
+				</button>
+			</div>
+			<div
+				class="header-right"
+				style="display: flex; align-items: center; gap: 15px"
+			>
+				<div class="notification-wrapper" style="position: relative">
+					<button
+						class="nav-item"
+						onclick="toggleNotifications()"
+						style="padding: 8px"
+					>
+						<i class="fas fa-bell"></i>
+						<span
+							id="notif-badge"
+							style="
+								display: none;
+								position: absolute;
+								top: 5px;
+								right: 5px;
+								width: 8px;
+								height: 8px;
+								background: red;
+								border-radius: 50%;
+								box-shadow: 0 0 0 2px white;
+							"
+						></span>
+					</button>
+					<div id="notif-dropdown" class="notif-dropdown" style="display: none">
+						<div class="notif-header">
+							<span>Notifications</span>
+							<button
+								onclick="markRead()"
+								style="
+									font-size: 0.7rem;
+									background: none;
+									border: none;
+									color: #4f46e5;
+									cursor: pointer;
+									font-weight: 700;
+								"
+							>
+								Mark Read
+							</button>
+						</div>
+						<div id="notif-list" class="notif-list"></div>
+					</div>
+				</div>
+
+				<a href="/auth/logout" class="btn-logout"
+					><i class="fas fa-power-off"></i> Keluar</a
+				>
+			</div>
+		</header>
+
+		<div class="main-container">
+			<div id="view-map" class="view-section active-view">
+				<div id="map"></div>
+			</div>
+
+			<div id="view-list" class="view-section">
+				<div class="container-width">
+					<div
+						class="list-header"
+						style="
+							display: flex;
+							justify-content: space-between;
+							align-items: center;
+							margin-bottom: 20px;
+						"
+					>
+						<div>
+							<h2>Manage Node</h2>
+							<span class="subtitle">Monitoring & Control</span>
+						</div>
+						<div
+							class="view-controls"
+							style="display: flex; align-items: center; gap: 10px"
+						>
+							<label
+								style="
+									font-size: 0.9rem;
+									font-weight: 600;
+									color: var(--secondary);
+								"
+								>Tampilan:</label
+							>
+							<select
+								id="densitySelect"
+								onchange="changeDensity(this.value)"
+								style="
+									padding: 8px;
+									border-radius: 6px;
+									border: 1px solid var(--border);
+								"
+							>
+								<option value="3">Detail (3 per hal)</option>
+								<option value="6" selected>Normal (6 per hal)</option>
+								<option value="12">Compact (12 per hal)</option>
+								<option value="24">Minimal (24 per hal)</option>
+							</select>
+							<div id="adminAddBtnWrapper"></div>
+						</div>
+					</div>
+					<div id="cards-container" class="card-grid"></div>
+					<div id="pagination-controls" class="pagination-wrapper"></div>
+				</div>
+			</div>
+		</div>
+
+		<div id="addModal" class="modal">
+			<div class="modal-content">
+				<div class="modal-header">
+					<h3>Tambah Node Baru</h3>
+					<span class="close-btn" onclick="closeModal('addModal')"
+						>&times;</span
+					>
+				</div>
+				<div class="form-group">
+					<label>Label Perangkat</label>
+					<select id="addTypeSelect" onchange="toggleTypeInput('add')">
+						<option value="Server">Server</option>
+						<option value="Router">Router</option>
+						<option value="custom">Custom (Isi Sendiri...)</option>
+					</select>
+					<input
+						type="text"
+						id="addTypeCustom"
+						placeholder="Nama Label Custom..."
+						style="display: none; margin-top: 8px"
+					/>
+				</div>
+
+				<div
+					style="
+						background: #f8fafc;
+						padding: 12px;
+						border-radius: 8px;
+						border: 1px solid #e2e8f0;
+						margin-bottom: 16px;
+					"
+				>
+					<label style="margin-bottom: 8px; display: block">Notifikasi</label>
+					<div style="display: flex; gap: 15px; flex-wrap: wrap">
+						<label
+							style="
+								display: flex;
+								align-items: center;
+								gap: 6px;
+								font-weight: normal;
+								font-size: 0.9rem;
+								color: #334155;
+							"
+							><input type="checkbox" id="addNotifyDown" checked /> Node
+							Down</label
+						>
+						<label
+							style="
+								display: flex;
+								align-items: center;
+								gap: 6px;
+								font-weight: normal;
+								font-size: 0.9rem;
+								color: #334155;
+							"
+							><input type="checkbox" id="addNotifyTraffic" checked /> High
+							Traffic</label
+						>
+						<label
+							style="
+								display: flex;
+								align-items: center;
+								gap: 6px;
+								font-weight: normal;
+								font-size: 0.9rem;
+								color: #334155;
+							"
+							><input type="checkbox" id="addNotifyEmail" /> Kirim Email</label
+						>
+					</div>
+				</div>
+
+				<div class="form-group">
+					<label>Pilih Ikon</label
+					><input type="hidden" id="addIcon" value="fa-server" />
+					<div class="icon-selector-grid" id="addIconGrid"></div>
+				</div>
+				<div class="form-group">
+					<label>Nama / ID (Unik)</label
+					><input type="text" id="addId" placeholder="Misal: SRV-01" />
+				</div>
+				<div class="form-group">
+					<label>IP Address / Hostname</label
+					><input type="text" id="addHost" placeholder="Misal: 192.168.1.1" />
+				</div>
+				<div class="form-group">
+					<label>Metode Monitoring</label
+					><select id="addUseSnmp">
+						<option value="0">Ping Only (ICMP)</option>
+						<option value="1">Ping + Network Traffic (Prometheus)</option>
+					</select>
+				</div>
+				<div class="row">
+					<div class="form-group">
+						<label>Lat</label
+						><input type="text" id="addLat" readonly class="coord-input" />
+					</div>
+					<div class="form-group">
+						<label>Lng</label
+						><input type="text" id="addLng" readonly class="coord-input" />
+					</div>
+				</div>
+				<button class="btn-primary" onclick="submitAdd()">Simpan Node</button>
+			</div>
+		</div>
+
+		<div id="editModal" class="modal">
+			<div class="modal-content">
+				<div class="modal-header">
+					<h3>Edit Node</h3>
+					<span class="close-btn" onclick="closeModal('editModal')"
+						>&times;</span
+					>
+				</div>
+				<div class="form-group">
+					<label>ID Node</label
+					><input type="text" id="editId" readonly class="readonly-input" />
+				</div>
+				<div class="form-group">
+					<label>Label Perangkat</label>
+					<select id="editTypeSelect" onchange="toggleTypeInput('edit')">
+						<option value="Server">Server</option>
+						<option value="Router">Router</option>
+						<option value="custom">Custom (Isi Sendiri...)</option>
+					</select>
+					<input
+						type="text"
+						id="editTypeCustom"
+						placeholder="Nama Label Custom..."
+						style="display: none; margin-top: 8px"
+					/>
+				</div>
+
+				<div
+					style="
+						background: #f8fafc;
+						padding: 12px;
+						border-radius: 8px;
+						border: 1px solid #e2e8f0;
+						margin-bottom: 16px;
+					"
+				>
+					<label style="margin-bottom: 8px; display: block">Notifikasi</label>
+					<div style="display: flex; gap: 15px; flex-wrap: wrap">
+						<label
+							style="
+								display: flex;
+								align-items: center;
+								gap: 6px;
+								font-weight: normal;
+								font-size: 0.9rem;
+								color: #334155;
+							"
+							><input type="checkbox" id="editNotifyDown" /> Node Down</label
+						>
+						<label
+							style="
+								display: flex;
+								align-items: center;
+								gap: 6px;
+								font-weight: normal;
+								font-size: 0.9rem;
+								color: #334155;
+							"
+							><input type="checkbox" id="editNotifyTraffic" /> High
+							Traffic</label
+						>
+						<label
+							style="
+								display: flex;
+								align-items: center;
+								gap: 6px;
+								font-weight: normal;
+								font-size: 0.9rem;
+								color: #334155;
+							"
+							><input type="checkbox" id="editNotifyEmail" /> Kirim Email</label
+						>
+					</div>
+				</div>
+
+				<div class="form-group">
+					<label>Pilih Ikon</label
+					><input type="hidden" id="editIcon" value="fa-server" />
+					<div class="icon-selector-grid" id="editIconGrid"></div>
+				</div>
+				<div class="form-group">
+					<label>IP Address</label><input type="text" id="editHost" />
+				</div>
+				<div class="form-group">
+					<label>Metode Monitoring</label
+					><select id="editUseSnmp">
+						<option value="0">Ping Only (ICMP)</option>
+						<option value="1">Ping + Network Traffic (Prometheus)</option>
+					</select>
+				</div>
+				<div class="row">
+					<div class="form-group">
+						<label>Lat</label><input type="text" id="editLat" />
+					</div>
+					<div class="form-group">
+						<label>Lng</label><input type="text" id="editLng" />
+					</div>
+				</div>
+				<div class="modal-actions">
+					<button class="btn-secondary" onclick="closeModal('editModal')">
+						Batal</button
+					><button class="btn-primary" onclick="submitEdit()">Simpan</button>
+				</div>
+			</div>
+		</div>
+
+		<div id="detailModal" class="modal">
+			<div class="modal-content large-modal">
+				<div class="modal-header">
+					<div>
+						<h3 id="detailTitle" style="margin: 0">Node Details</h3>
+						<span
+							id="detailHost"
+							style="color: var(--secondary); font-size: 0.9rem"
+						></span>
+					</div>
+					<div class="chart-controls">
+						<select
+							id="metricSelect"
+							class="chart-select"
+							onchange="updateDetailView()"
+						>
+							<option value="latency">Latency (ms)</option>
+							<option value="bandwidth">Bandwidth (Kbps)</option>
+							<option value="status">Status Log (Text)</option>
+						</select>
+						<select
+							id="rangeSelect"
+							class="chart-select"
+							onchange="updateDetailView()"
+						>
+							<option value="5">5 Menit</option>
+							<option value="30">30 Menit</option>
+							<option value="60">1 Jam</option>
+							<option value="360">6 Jam</option>
+							<option value="1440">24 Jam</option>
+							<option value="10080">1 Minggu</option>
+						</select>
+					</div>
+					<span class="close-btn" onclick="closeModal('detailModal')"
+						>&times;</span
+					>
+				</div>
+				<div class="detail-body">
+					<div
+						id="chartLoading"
+						style="
+							display: none;
+							position: absolute;
+							top: 50%;
+							left: 50%;
+							transform: translate(-50%, -50%);
+							color: var(--secondary);
+							z-index: 10;
+						"
+					>
+						Memuat Data...
+					</div>
+					<div class="chart-container-large" id="chartWrapper">
+						<canvas id="detailChart"></canvas>
+					</div>
+					<div
+						id="historyListWrapper"
+						style="
+							display: none;
+							flex: 1;
+							overflow-y: auto;
+							border: 1px solid #e2e8f0;
+							border-radius: 8px;
+						"
+					>
+						<table class="history-table">
+							<thead>
+								<tr>
+									<th width="30%">Waktu</th>
+									<th width="20%">Status</th>
+									<th width="50%">Detail Metrik</th>
+								</tr>
+							</thead>
+							<tbody id="historyTableBody"></tbody>
+						</table>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<div id="deleteModal" class="modal">
+			<div class="modal-content small-modal">
+				<div class="modal-header">
+					<h3 style="color: var(--danger)">Hapus Node?</h3>
+					<span class="close-btn" onclick="closeModal('deleteModal')"
+						>&times;</span
+					>
+				</div>
+				<p>
+					Hapus node <b><span id="delTargetName"></span></b> secara permanen?
+				</p>
+				<input type="hidden" id="delTargetId" />
+				<div class="modal-actions">
+					<button class="btn-secondary" onclick="closeModal('deleteModal')">
+						Batal</button
+					><button class="btn-danger-modal" onclick="submitDelete()">
+						Ya, Hapus
+					</button>
+				</div>
+			</div>
+		</div>
+
+		<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+		<script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
+		<script src="/js/app.js"></script>
+	</body>
+</html>
