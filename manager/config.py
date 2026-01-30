@@ -11,7 +11,8 @@ for path in env_paths:
 class Config:
     SECRET_KEY = os.getenv("MANAGER_SECRET_KEY", "super-secret-key-change-me")
     
-    AUTHENTIK_API_URL = os.getenv("AUTHENTIK_API_URL", "http://authentik-server:9000/api/v3")
+    _raw_url = os.getenv("AUTHENTIK_API_URL", "http://authentik-server:9000/api/v3")
+    AUTHENTIK_API_URL = _raw_url.rstrip('/')
     AUTHENTIK_TOKEN = os.getenv("AUTHENTIK_TOKEN") 
     
     STALWART_API_URL = os.getenv("STALWART_API_URL", "http://email:8080")
