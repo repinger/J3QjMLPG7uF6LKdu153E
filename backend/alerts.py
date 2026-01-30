@@ -1,95 +1,81 @@
 import smtplib
-import threading
 import time
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from datetime import datetime
 from config import Config
-from database import get_db_connection
 
-# Cache untuk cooldown notifikasi: {'machine_id': {'down': timestamp, 'traffic': timestamp}}
-last_alert_times = {}
+# Cache sederhana untuk Cooldown di memori
+cooldown_cache = {}
 
-def create_app_alert(machine_id, alert_type, message):
-    """Simpan notifikasi ke database agar muncul di lonceng dashboard"""
-    try:
-        conn = get_db_connection()
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        conn.execute("INSERT INTO app_alerts (machine_id, type, message, time) VALUES (?, ?, ?, ?)",
-                     (machine_id, alert_type, message, timestamp))
-        conn.commit()
-        conn.close()
-        print(f"[!] Alert DB Saved: {message}")
-    except Exception as e:
-        print(f"[!] Alert DB Error: {e}")
-
-def send_email(subject, body):
-    """Kirim email via SMTP"""
-    if not Config.SMTP_SERVER or not Config.ALERT_RECIPIENT:
-        return
-
-    try:
-        msg = MIMEMultipart()
-        msg['From'] = Config.SMTP_EMAIL
-        msg['To'] = Config.ALERT_RECIPIENT
-        msg['Subject'] = subject
-        msg.attach(MIMEText(body, 'plain'))
-
-        server = smtplib.SMTP(Config.SMTP_SERVER, Config.SMTP_PORT)
-        server.ehlo()
-        if Config.SMTP_PASSWORD:
-            server.login(Config.SMTP_EMAIL, Config.SMTP_PASSWORD)
-        
-        server.send_message(msg)
-        server.quit()
-        print(f"[✓] Email Sent: {subject}")
-    except Exception as e:
-        print(f"[!] Email Failed: {e}")
-
-def process_alert(machine, alert_type, current_val=0):
-    mid = machine['id']
-    host = machine['host']
-    
-    # Init cooldown record
-    if mid not in last_alert_times:
-        last_alert_times[mid] = {'down': 0, 'traffic': 0}
-    
+def check_cooldown(machine_id, alert_type):
+    key = f"{machine_id}_{alert_type}"
+    last_time = cooldown_cache.get(key, 0)
     now = time.time()
-    last_sent = last_alert_times[mid].get(alert_type, 0)
+    return (now - last_time) > Config.ALERT_COOLDOWN
 
-    # Cek Cooldown (Misal: Config.ALERT_COOLDOWN detik)
-    if (now - last_sent) > Config.ALERT_COOLDOWN:
-        last_alert_times[mid][alert_type] = now
-        
-        subject = ""
-        message = ""
-        
-        if alert_type == 'down':
-            subject = f"[MONITORR] ALERT: Node {mid} DOWN"
-            message = f"CRITICAL: Node {mid} ({host}) tidak dapat dihubungi (Offline)."
-        elif alert_type == 'traffic':
-            gbps = round(current_val / 1000000, 2)
-            subject = f"[MONITORR] WARN: High Traffic on {mid}"
-            message = f"WARNING: Bandwidth tinggi terdeteksi pada {mid} ({host}). Current: {gbps} Mbps."
+def update_cooldown(machine_id, alert_type):
+    key = f"{machine_id}_{alert_type}"
+    cooldown_cache[key] = time.time()
 
-        # 1. Selalu simpan ke Notifikasi Aplikasi (Lonceng)
-        threading.Thread(target=create_app_alert, args=(mid, alert_type, message)).start()
+def send_email_alert(machine_id, alert_type, message):
+    if not Config.SMTP_SERVER or not Config.ALERT_RECIPIENT:
+        print("[!] Email Config Missing")
+        return False
 
-        # 2. Kirim Email HANYA jika dicentang user
-        if machine['notify_email']:
-            threading.Thread(target=send_email, args=(subject, message)).start()
+    if not check_cooldown(machine_id, alert_type):
+        return False
 
-def check_alerts(machine, is_online, rx, tx):
-    """Fungsi utama yang dipanggil monitoring loop"""
+    # Siapkan Email
+    msg = MIMEMultipart()
+    msg['From'] = Config.SMTP_EMAIL or "monitorr@localhost"
+    msg['To'] = Config.ALERT_RECIPIENT
+    msg['Subject'] = f"[Monitorr] Alert: {machine_id} is {alert_type.upper()}"
+
+    body = f"""
+    Sistem Monitoring mendeteksi masalah:
     
-    # 1. Alert Down
-    if not is_online and machine['notify_down']:
-        process_alert(machine, 'down')
+    Node ID   : {machine_id}
+    Status    : {alert_type.upper()}
+    Pesan     : {message}
+    Waktu     : {time.ctime()}
+    
+    Cek dashboard untuk detail.
+    """
+    msg.attach(MIMEText(body, 'plain'))
+
+    server = None
+    try:
+        # Inisialisasi Koneksi (Tanpa Timeout di Constructor untuk stabilitas)
+        server = smtplib.SMTP(Config.SMTP_SERVER, Config.SMTP_PORT, timeout=10)
+        server.ehlo()
+
+        # [SKIP TLS] Sesuai konfigurasi yang bekerja
+        # server.starttls()
         
-    # 2. Alert Traffic (Hanya jika online dan pakai SNMP)
-    if is_online and machine['use_snmp'] and machine['notify_traffic']:
-        limit = Config.BANDWIDTH_THRESHOLD
-        # Cek jika RX atau TX melebihi limit
-        if rx > limit or tx > limit:
-            val = max(rx, tx)
-            process_alert(machine, 'traffic', val)
+        # Login dengan Fallback (Graceful)
+        if Config.SMTP_EMAIL and Config.SMTP_PASSWORD:
+            try:
+                server.login(Config.SMTP_EMAIL, Config.SMTP_PASSWORD)
+            except smtplib.SMTPNotSupportedError:
+                pass # Server tidak support auth, lanjut kirim (relay)
+            except Exception as e:
+                print(f"[!] SMTP Login Failed: {e}")
+                return False
+
+        # Kirim
+        server.sendmail(msg['From'], msg['To'], msg.as_string())
+        print(f"[*] Email sent to {Config.ALERT_RECIPIENT} ({machine_id}: {alert_type})")
+        
+        update_cooldown(machine_id, alert_type)
+        return True
+
+    except Exception as e:
+        print(f"[!] Email Send Error: {e}")
+        return False
+        
+    finally:
+        if server:
+            try:
+                server.quit()
+            except:
+                pass

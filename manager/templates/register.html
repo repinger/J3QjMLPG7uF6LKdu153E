@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Complete Registration</title>
+		<link
+			href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+			rel="stylesheet"
+		/>
+		<link
+			href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+			rel="stylesheet"
+		/>
+
+		<link
+			href="{{ url_for('static', filename='css/style.css') }}"
+			rel="stylesheet"
+		/>
+
+		<script
+			src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+			async
+			defer
+		></script>
+
+		<style>
+			/* [FIX LAYOUT] Paksa horizontal layout */
+			body {
+				flex-direction: row !important;
+				overflow: hidden;
+				width: 100vw;
+				height: 100vh;
+				margin: 0;
+			}
+
+			/* Panel Kiri - Tema Hijau */
+			.split-left {
+				flex: 1;
+				background-color: #10b981;
+				background-image: radial-gradient(
+					rgba(255, 255, 255, 0.2) 1px,
+					transparent 1px
+				);
+				background-size: 20px 20px;
+				padding: 3rem;
+				color: white;
+				display: flex;
+				flex-direction: column;
+				justify-content: space-between;
+			}
+
+			/* Panel Kanan - Form */
+			.split-right {
+				flex: 1;
+				background: #ffffff;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				padding: 2rem;
+			}
+
+			.form-container {
+				width: 100%;
+				max-width: 400px;
+			}
+
+			.form-group {
+				margin-bottom: 1.25rem;
+			}
+			label {
+				display: block;
+				margin-bottom: 0.5rem;
+				font-weight: 600;
+				font-size: 0.9rem;
+				color: var(--text-main);
+			}
+
+			.input-wrapper {
+				position: relative;
+			}
+
+			/* Styling Ikon */
+			.input-wrapper i {
+				position: absolute;
+				left: 16px;
+				top: 50%;
+				transform: translateY(-50%);
+				color: #94a3b8;
+				pointer-events: none;
+				z-index: 10; /* Pastikan ikon di atas input */
+			}
+
+			/* [FIX BENTROK ICON] Selector diperkuat + !important agar menang dari style.css */
+			.input-wrapper input {
+				width: 100%;
+				padding: 0.9rem 1rem 0.9rem 3rem !important; /* Padding kiri 3rem wajib! */
+				border: 1.5px solid var(--border);
+				border-radius: 10px;
+				font-size: 1rem;
+				font-family: inherit;
+				background: white;
+			}
+
+			.input-wrapper input:focus {
+				outline: none;
+				border-color: #10b981;
+				box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.1);
+			}
+
+			button {
+				width: 100%;
+				padding: 1rem;
+				background: #10b981;
+				color: white;
+				border: none;
+				border-radius: 10px;
+				font-weight: 600;
+				font-size: 1rem;
+				cursor: pointer;
+				margin-top: 1rem;
+				transition: background 0.2s;
+			}
+			button:hover {
+				background: #059669;
+			}
+
+			.brand-large {
+				font-size: 1.5rem;
+				font-weight: 700;
+				display: flex;
+				align-items: center;
+				gap: 10px;
+			}
+			.quote {
+				font-size: 2rem;
+				font-weight: 700;
+				line-height: 1.2;
+				margin-bottom: 1rem;
+			}
+
+			@media (max-width: 900px) {
+				.split-left {
+					display: none;
+				}
+			}
+		</style>
+	</head>
+	<body>
+		<div class="split-left">
+			<div class="brand-large">
+				<i class="fas fa-user-plus"></i> Monitorr Access
+			</div>
+			<div>
+				<div class="quote">Welcome Aboard.</div>
+				<div style="opacity: 0.9; font-size: 1.1rem">
+					Complete your profile to access the dashboard.
+				</div>
+			</div>
+			<div style="font-size: 0.85rem; opacity: 0.6">
+				&copy; 2026 Monitorr Inc.
+			</div>
+		</div>
+
+		<div class="split-right">
+			<div class="form-container">
+				<h2 style="font-size: 1.8rem; margin: 0 0 0.5rem 0; color: #0f172a">
+					Setup Account
+				</h2>
+				<p style="color: #64748b; margin-bottom: 2rem">
+					For email: <strong>{{ email }}</strong>
+				</p>
+
+				{% with messages = get_flashed_messages(with_categories=true) %} {% if
+				messages %} {% for category, message in messages %}
+				<div
+					style="padding: 12px; border-radius: 8px; font-size: 0.9rem; margin-bottom: 1rem;
+                        background: {{ '#fef2f2' if category == 'danger' else '#ecfdf5' }};
+                        color: {{ '#991b1b' if category == 'danger' else '#065f46' }};"
+				>
+					{{ message }}
+				</div>
+				{% endfor %} {% endif %} {% endwith %}
+
+				<form action="/register" method="POST">
+					<input type="hidden" name="token" value="{{ token }}" />
+
+					<div class="form-group">
+						<label>Username</label>
+						<div class="input-wrapper">
+							<input
+								type="text"
+								name="username"
+								placeholder="Choose a username"
+								required
+							/>
+							<i class="fas fa-user"></i>
+						</div>
+					</div>
+
+					<div class="form-group">
+						<label>Password</label>
+						<div class="input-wrapper">
+							<input
+								type="password"
+								name="password"
+								placeholder="Min. 8 characters"
+								minlength="8"
+								required
+							/>
+							<i class="fas fa-lock"></i>
+						</div>
+					</div>
+
+					<div class="form-group">
+						<label>Confirm Password</label>
+						<div class="input-wrapper">
+							<input
+								type="password"
+								name="confirm_password"
+								placeholder="Repeat password"
+								minlength="8"
+								required
+							/>
+							<i class="fas fa-check-circle"></i>
+						</div>
+					</div>
+
+					<div style="margin-top: 1rem; display: flex; justify-content: center">
+						<div
+							class="cf-turnstile"
+							data-sitekey="0x4AAAAAACS8-Z3nEddcM630"
+							data-theme="light"
+						></div>
+					</div>
+
+					<button type="submit">Create Account</button>
+				</form>
+			</div>
+		</div>
+	</body>
+</html>

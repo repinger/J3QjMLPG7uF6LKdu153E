@@ -18,7 +18,7 @@ def init_db():
     conn = get_db_connection()
     c = conn.cursor()
 
-    # 1. Buat Tabel Utama jika belum ada
+    # 1. Buat Tabel Utama
     c.execute('''
         CREATE TABLE IF NOT EXISTS machines (
             id TEXT PRIMARY KEY,
@@ -36,7 +36,14 @@ def init_db():
         )
     ''')
 
-    # 2. Migrasi: Tambahkan kolom notifikasi satu per satu (Safety Check)
+    # [FIX] Tambahkan Unique Index untuk Host
+    # Ini mencegah duplikasi Host di level database
+    try:
+        c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_machines_host ON machines(host)")
+    except Exception as e:
+        print(f"[!] Index creation warning: {e}")
+
+    # 2. Migrasi Kolom
     add_column_if_not_exists(c, "machines", "notify_down", "BOOLEAN DEFAULT 1")
     add_column_if_not_exists(c, "machines", "notify_traffic", "BOOLEAN DEFAULT 1")
     add_column_if_not_exists(c, "machines", "notify_email", "BOOLEAN DEFAULT 0")

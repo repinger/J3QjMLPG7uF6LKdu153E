@@ -43,6 +43,13 @@ async function fetchUserInfo() {
 			const user = await res.json();
 			currentUserRole = user.role;
 
+			// [FIX] Update Tampilan User & Role
+			const nameEl = document.getElementById("nav-username");
+			const roleEl = document.getElementById("nav-role");
+
+			if (nameEl) nameEl.textContent = user.username || "User";
+			if (roleEl) roleEl.textContent = user.role || "Member";
+
 			// LOGIKA GANTI NAMA MENU & JUDUL
 			const navListBtn = document.getElementById("nav-list");
 			const pageTitle = document.querySelector("#view-list h2");
@@ -56,8 +63,11 @@ async function fetchUserInfo() {
 				if (pageSubtitle)
 					pageSubtitle.textContent = "Monitoring & Control Center";
 
-				const navUsers = document.getElementById("nav-users");
-				if (navUsers) navUsers.style.display = "flex";
+				// Highlight Role Admin
+				if (roleEl) {
+					roleEl.style.color = "#f59e0b"; // Warna Orange/Emas untuk admin
+					roleEl.innerHTML = '<i class="fas fa-shield-alt"></i> ADMIN';
+				}
 			} else {
 				// Tampilan USER BIASA
 				if (navListBtn)
@@ -70,16 +80,13 @@ async function fetchUserInfo() {
 				document.body.classList.add("role-user");
 			}
 
-			// [FIX] Hapus class loading agar elemen muncul dengan halus
 			document.body.classList.remove("auth-pending");
-
 			renderList(currentMachines);
 		} else {
 			window.location.href = "/login";
 		}
 	} catch (e) {
 		console.error("Auth check failed", e);
-		// Jika error, tetap munculkan body agar tidak blank selamanya (fallback)
 		document.body.classList.remove("auth-pending");
 	}
 }
@@ -120,6 +127,25 @@ async function fetchNotifications() {
 window.markRead = async function () {
 	await fetch("/api/alerts/read", { method: "POST" });
 	fetchNotifications();
+};
+
+window.clearNotifications = async function () {
+	// Konfirmasi agar tidak terhapus tidak sengaja
+	if (!confirm("Hapus semua riwayat notifikasi?")) return;
+
+	try {
+		const res = await fetch("/api/alerts/clear", { method: "POST" });
+		if (res.ok) {
+			// Refresh list notifikasi (akan menjadi kosong)
+			fetchNotifications();
+			showToast("Notifikasi dihapus", "success");
+		} else {
+			showToast("Gagal menghapus", "error");
+		}
+	} catch (e) {
+		console.error(e);
+		showToast("Error koneksi", "error");
+	}
 };
 
 // --- HELPERS ---
@@ -672,14 +698,18 @@ window.openAddModal = function (lat = 0, lng = 0) {
 window.submitAdd = async function () {
 	const id = document.getElementById("addId").value.trim(),
 		host = document.getElementById("addHost").value.trim();
+
 	if (!id || !host) {
 		showToast("Isi Nama dan Host", "error");
 		return;
 	}
+
 	const type =
 		document.getElementById("addTypeSelect").value === "custom"
 			? document.getElementById("addTypeCustom").value
 			: document.getElementById("addTypeSelect").value;
+
+	// Ambil value checkbox (1 atau 0)
 	const notify_down = document.getElementById("addNotifyDown").checked ? 1 : 0;
 	const notify_traffic = document.getElementById("addNotifyTraffic").checked
 		? 1
@@ -687,10 +717,12 @@ window.submitAdd = async function () {
 	const notify_email = document.getElementById("addNotifyEmail").checked
 		? 1
 		: 0;
+
 	const lat = document.getElementById("addLat").value || 0;
 	const lng = document.getElementById("addLng").value || 0;
+
 	try {
-		await fetch("/api/add", {
+		const res = await fetch("/api/add", {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({
@@ -706,11 +738,21 @@ window.submitAdd = async function () {
 				notify_email,
 			}),
 		});
-		closeModal("addModal");
-		showToast("Berhasil", "success");
-		loadStatus();
+
+		// [FIX] Baca respons JSON dari backend
+		const data = await res.json();
+
+		if (res.ok) {
+			closeModal("addModal");
+			showToast("Berhasil Menambahkan Node", "success");
+			loadStatus();
+		} else {
+			// [FIX] Tampilkan pesan error spesifik (misal: "Node ID sudah ada")
+			showToast(data.error || "Gagal menambahkan node", "error");
+		}
 	} catch (e) {
-		showToast("Gagal", "error");
+		console.error(e);
+		showToast("Terjadi kesalahan koneksi", "error");
 	}
 };
 
@@ -746,14 +788,17 @@ window.submitEdit = async function () {
 	const notify_email = document.getElementById("editNotifyEmail").checked
 		? 1
 		: 0;
+
 	const type =
 		document.getElementById("editTypeSelect").value === "custom"
 			? document.getElementById("editTypeCustom").value
 			: document.getElementById("editTypeSelect").value;
+
 	const lat = document.getElementById("editLat").value || 0;
 	const lng = document.getElementById("editLng").value || 0;
+
 	try {
-		await fetch("/api/edit", {
+		const res = await fetch("/api/edit", {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({
@@ -769,11 +814,21 @@ window.submitEdit = async function () {
 				notify_email,
 			}),
 		});
-		closeModal("editModal");
-		showToast("Updated", "success");
-		loadStatus();
+
+		// [FIX] Baca respons JSON dari backend
+		const data = await res.json();
+
+		if (res.ok) {
+			closeModal("editModal");
+			showToast("Node Berhasil Diupdate", "success");
+			loadStatus();
+		} else {
+			// [FIX] Tampilkan pesan error spesifik (misal: "IP Address sudah digunakan")
+			showToast(data.error || "Gagal mengupdate node", "error");
+		}
 	} catch (e) {
-		showToast("Gagal", "error");
+		console.error(e);
+		showToast("Terjadi kesalahan koneksi", "error");
 	}
 };
 

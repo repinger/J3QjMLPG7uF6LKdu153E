@@ -2,7 +2,7 @@ from flask import Flask, jsonify, request
 from config import Config
 from database import init_db, get_db_connection
 from monitoring import monitor_loop
-from ldap_service import authenticate_ldap
+from oidc_service import authenticate_oidc
 import threading
 import time
 import sqlite3
@@ -14,19 +14,24 @@ init_db()
 threading.Thread(target=monitor_loop, daemon=True).start()
 
 # --- AUTH ROUTES ---
-@app.route('/login', methods=['POST'])      # Handle stripped URL
-@app.route('/api/auth/login', methods=['POST']) # Handle full URL
+@app.route('/login', methods=['POST'])      
+@app.route('/api/auth/login', methods=['POST'])
 def login():
     data = request.json
-    username = data.get('username')
-    password = data.get('password')
     
-    user_info = authenticate_ldap(username, password)
+    # Perubahan Logic: Menerima 'code' dari Frontend
+    auth_code = data.get('code')
+    
+    if not auth_code:
+        return jsonify({"success": False, "message": "Authorization code missing"}), 400
+    
+    # Panggil service OIDC
+    user_info = authenticate_oidc(auth_code)
     
     if user_info:
         return jsonify({"success": True, "user": user_info})
     else:
-        return jsonify({"success": False, "message": "Invalid credentials"}), 401
+        return jsonify({"success": False, "message": "Authentication failed"}), 401
 
 # --- NOTIFICATION ROUTES ---
 @app.route('/alerts', methods=['GET'])
@@ -45,10 +50,21 @@ def get_alerts():
 @app.route('/api/alerts/read', methods=['POST'])
 def mark_alerts_read():
     conn = get_db_connection()
-    conn.execute("UPDATE app_alerts SET is_read = 1 WHERE is_read = 0")
+    conn.execute('UPDATE app_alerts SET is_read = 1')
     conn.commit()
     conn.close()
     return jsonify({"success": True})
+
+@app.route('/api/alerts/clear', methods=['POST'])
+def clear_alerts():
+    try:
+        conn = get_db_connection()
+        conn.execute('DELETE FROM app_alerts')
+        conn.commit()
+        conn.close()
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 # --- MACHINE ROUTES (STATUS & HISTORY) ---
 @app.route('/status', methods=['GET'])
@@ -81,22 +97,31 @@ def get_history():
     
     return jsonify([dict(r) for r in reversed(rows)])
 
-# --- CRUD ROUTES (ADD/EDIT/REMOVE) ---
-# [FIXED] Tambahkan route '/add' (tanpa api) untuk menangani request dari gateway
 @app.route('/add', methods=['POST'])
 @app.route('/api/add', methods=['POST'])
 def add_machine():
     d = request.json
     
-    # Validasi input
+    # Validasi input dasar
     if not d.get('id') or not d.get('host'):
         return jsonify({"error": "ID and Host required"}), 400
 
+    m_id = str(d['id']).strip()
+    host = str(d['host']).strip()
+
     conn = get_db_connection()
     try:
-        # Konversi data
-        m_id = str(d['id']).strip()
-        host = str(d['host']).strip()
+        # [FIX] Cek Duplikat ID
+        exist_id = conn.execute("SELECT 1 FROM machines WHERE id = ?", (m_id,)).fetchone()
+        if exist_id:
+            return jsonify({"error": f"Node ID '{m_id}' sudah digunakan!"}), 400
+
+        # [FIX] Cek Duplikat Host/IP
+        exist_host = conn.execute("SELECT 1 FROM machines WHERE host = ?", (host,)).fetchone()
+        if exist_host:
+            return jsonify({"error": f"IP Address '{host}' sudah digunakan node lain!"}), 400
+
+        # Konversi data sisa
         m_type = str(d.get('type', 'Device'))
         icon = str(d.get('icon', 'fa-server'))
         use_snmp = int(d.get('use_snmp', 0))
@@ -113,10 +138,7 @@ def add_machine():
         
         conn.commit()
         return jsonify({"message": "Node Added"})
-    except sqlite3.IntegrityError:
-        return jsonify({"error": "Node ID already exists"}), 400
-    except ValueError:
-        return jsonify({"error": "Invalid data format"}), 400
+        
     except Exception as e:
         print(f"[!] Add Error: {e}")
         return jsonify({"error": str(e)}), 500
@@ -127,15 +149,24 @@ def add_machine():
 @app.route('/api/edit', methods=['POST'])
 def edit_machine():
     d = request.json
+    m_id = d.get('id')
+    host = d.get('host')
+
     conn = get_db_connection()
     try:
+        # [FIX] Cek Duplikat Host saat Edit
+        # Pastikan Host tidak dipakai oleh ID LAIN (kecuali diri sendiri)
+        exist_host = conn.execute("SELECT 1 FROM machines WHERE host = ? AND id != ?", (host, m_id)).fetchone()
+        if exist_host:
+            return jsonify({"error": f"IP Address '{host}' sudah digunakan node lain!"}), 400
+
         conn.execute('''UPDATE machines SET 
             host=?, type=?, icon=?, use_snmp=?, lat=?, lng=?,
             notify_down=?, notify_traffic=?, notify_email=?
             WHERE id=?''', 
-            (d['host'], d['type'], d.get('icon'), int(d.get('use_snmp',0)), d['lat'], d['lng'],
+            (host, d['type'], d.get('icon'), int(d.get('use_snmp',0)), d['lat'], d['lng'],
              int(d.get('notify_down', 1)), int(d.get('notify_traffic', 1)), int(d.get('notify_email', 0)),
-             d['id']))
+             m_id))
         conn.commit()
         return jsonify({"message": "Node Updated"})
     except Exception as e:

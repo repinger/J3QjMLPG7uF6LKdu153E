@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Dashboard - User Manager</title>
+		<link
+			href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+			rel="stylesheet"
+		/>
+		<link
+			href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+			rel="stylesheet"
+		/>
+		<link
+			href="{{ url_for('static', filename='css/style.css') }}"
+			rel="stylesheet"
+		/>
+
+		<style>
+			/* CSS Tambahan Khusus Manager Dashboard */
+			.manager-grid {
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+				gap: 24px;
+				margin-bottom: 24px;
+			}
+			.form-control-custom {
+				width: 100%;
+				padding: 10px 12px;
+				border: 1px solid var(--border);
+				border-radius: 10px;
+				font-family: inherit;
+				margin-bottom: 10px;
+			}
+			.btn-custom {
+				padding: 10px;
+				border-radius: 8px;
+				font-weight: 600;
+				border: none;
+				cursor: pointer;
+				width: 100%;
+			}
+			.btn-primary-custom {
+				background: var(--primary);
+				color: white;
+			}
+			.btn-success-custom {
+				background: var(--success);
+				color: white;
+			}
+
+			.btn-danger-outline {
+				background: transparent;
+				border: 1px solid var(--danger);
+				color: var(--danger);
+				padding: 6px 14px;
+				border-radius: 8px;
+				cursor: pointer;
+				font-size: 0.85rem;
+				font-weight: 600;
+				transition: all 0.2s;
+			}
+			.btn-danger-outline:hover {
+				background: #fee2e2;
+			}
+
+			/* HEADER USER BADGE - Agar "Logged in as" terlihat rapi */
+			.user-badge {
+				background: #f1f5f9;
+				border: 1px solid #e2e8f0;
+				padding: 8px 16px;
+				border-radius: 50px;
+				display: flex;
+				align-items: center;
+				gap: 10px;
+				font-size: 0.9rem;
+				font-weight: 600;
+				color: #475569;
+			}
+
+			/* Section Title Helper */
+			.section-separator {
+				margin: 30px 0 15px 0;
+				display: flex;
+				align-items: center;
+				gap: 12px;
+				color: var(--text-sub);
+				font-weight: 700;
+				font-size: 0.9rem;
+				text-transform: uppercase;
+				letter-spacing: 0.05em;
+			}
+			.section-separator::after {
+				content: "";
+				flex: 1;
+				height: 1px;
+				background: var(--border);
+			}
+		</style>
+	</head>
+	<body>
+		<header>
+			<div class="brand"><i class="fas fa-users-cog"></i> Manager</div>
+
+			<div class="header-right">
+				<div class="user-badge">
+					<i
+						class="fas fa-user-circle"
+						style="font-size: 1.2rem; color: #64748b"
+					></i>
+					<span>{{ session['user'] }}</span>
+				</div>
+				<a href="/logout" class="btn-logout" title="Logout">
+					<i class="fas fa-sign-out-alt"></i>
+				</a>
+			</div>
+		</header>
+
+		<div class="main-container">
+			<div class="container-width">
+				{% with messages = get_flashed_messages(with_categories=true) %} {% if
+				messages %} {% for category, message in messages %}
+				<div
+					style="padding: 12px; border-radius: 12px; margin-bottom: 20px; font-weight: 500; 
+                        background: {{ '#dcfce7' if category == 'success' else '#fee2e2' }}; 
+                        color: {{ '#166534' if category == 'success' else '#991b1b' }}; border: 1px solid {{ '#bbf7d0' if category == 'success' else '#fecaca' }};"
+				>
+					<i
+						class="fas {{ 'fa-check-circle' if category == 'success' else 'fa-exclamation-circle' }} me-2"
+					></i>
+					{{ message }}
+				</div>
+				{% endfor %} {% endif %} {% endwith %}
+
+				<div class="list-header" style="margin-bottom: 20px">
+					<div>
+						<h2>Administration</h2>
+						<div class="subtitle">Manage invitations and user access.</div>
+					</div>
+				</div>
+
+				<div class="manager-grid">
+					<div class="card">
+						<div class="card-top">
+							<div
+								class="card-icon"
+								style="background: var(--primary-light); color: var(--primary)"
+							>
+								<i class="fas fa-envelope-open-text"></i>
+							</div>
+							<div class="card-info">
+								<h4>Invite User</h4>
+								<p>Send email invitation (Valid 12h)</p>
+							</div>
+						</div>
+						<form action="/invite" method="POST">
+							<label
+								style="
+									font-size: 0.85rem;
+									font-weight: 600;
+									color: var(--text-sub);
+								"
+								>Email Address</label
+							>
+							<input
+								type="email"
+								name="email"
+								class="form-control-custom"
+								placeholder="colleague@example.com"
+								required
+							/>
+
+							<label
+								style="
+									font-size: 0.85rem;
+									font-weight: 600;
+									color: var(--text-sub);
+								"
+								>Assign Group</label
+							>
+							<select name="group" class="form-control-custom" required>
+								<option value="" disabled selected>-- Select Group --</option>
+								{% for group in groups %}
+								<option value="{{ group.pk }}">{{ group.name }}</option>
+								{% endfor %}
+							</select>
+							<button type="submit" class="btn-custom btn-primary-custom mt-2">
+								<i class="fas fa-paper-plane"></i> Send Invitation
+							</button>
+						</form>
+					</div>
+
+					<div class="card">
+						<div class="card-top">
+							<div
+								class="card-icon"
+								style="background: #ecfdf5; color: var(--success)"
+							>
+								<i class="fas fa-user-plus"></i>
+							</div>
+							<div class="card-info">
+								<h4>Direct Creation</h4>
+								<p>Create account instantly</p>
+							</div>
+						</div>
+						<form action="/create" method="POST">
+							<div style="display: flex; gap: 10px">
+								<input
+									type="text"
+									name="username"
+									class="form-control-custom"
+									placeholder="Username"
+									required
+								/>
+								<select name="group" class="form-control-custom">
+									<option value="">No Group</option>
+									{% for group in groups %}
+									<option value="{{ group.pk }}">{{ group.name }}</option>
+									{% endfor %}
+								</select>
+							</div>
+							<div style="display: flex; gap: 10px">
+								<input
+									type="password"
+									name="password"
+									class="form-control-custom"
+									placeholder="Password"
+									minlength="8"
+									required
+								/>
+								<input
+									type="password"
+									name="confirm_password"
+									class="form-control-custom"
+									placeholder="Confirm"
+									minlength="8"
+									required
+								/>
+							</div>
+							<button type="submit" class="btn-custom btn-success-custom">
+								<i class="fas fa-check"></i> Create User
+							</button>
+						</form>
+					</div>
+				</div>
+
+				<div class="section-separator">
+					<i class="fas fa-users me-2"></i> Registered Accounts
+				</div>
+
+				<div
+					class="card"
+					style="padding: 0; overflow: hidden; margin-bottom: 24px"
+				>
+					<div style="overflow-x: auto">
+						<table class="history-table">
+							<thead>
+								<tr>
+									<th>Username</th>
+									<th>Name</th>
+									<th>Internal Email</th>
+									<th>Status</th>
+									<th style="text-align: right">Action</th>
+								</tr>
+							</thead>
+							<tbody>
+								{% for user in users if not user.is_protected %}
+								<tr>
+									<td style="font-weight: 600">
+										<div style="display: flex; align-items: center; gap: 10px">
+											<div
+												style="
+													width: 32px;
+													height: 32px;
+													background: #e0e7ff;
+													color: var(--primary);
+													border-radius: 50%;
+													display: flex;
+													align-items: center;
+													justify-content: center;
+													font-size: 0.8rem;
+												"
+											>
+												{{ user.username[:2].upper() }}
+											</div>
+											{{ user.username }}
+										</div>
+									</td>
+									<td>{{ user.name }}</td>
+									<td style="font-family: monospace; color: var(--text-sub)">
+										{{ user.email }}
+									</td>
+									<td>
+										{% if user.is_active %}
+										<span class="log-badge log-online">Active</span>
+										{% else %}
+										<span class="log-badge log-offline">Inactive</span>
+										{% endif %}
+									</td>
+									<td style="text-align: right">
+										<form
+											action="/delete/{{ user.pk }}"
+											method="POST"
+											onsubmit="return confirm('Permanently delete {{ user.username }}? This action involves removing mailbox and auth data.');"
+											style="display: inline"
+										>
+											<input
+												type="hidden"
+												name="username_hidden"
+												value="{{ user.username }}"
+											/>
+											<button class="btn-danger-outline">
+												<i class="fas fa-trash-alt"></i> Delete
+											</button>
+										</form>
+									</td>
+								</tr>
+								{% else %}
+								<tr>
+									<td
+										colspan="5"
+										style="
+											text-align: center;
+											padding: 40px;
+											color: var(--text-sub);
+										"
+									>
+										<i
+											class="fas fa-inbox"
+											style="
+												font-size: 2rem;
+												margin-bottom: 10px;
+												display: block;
+												opacity: 0.5;
+											"
+										></i>
+										No registered users found.
+									</td>
+								</tr>
+								{% endfor %}
+							</tbody>
+						</table>
+					</div>
+				</div>
+
+				<div class="section-separator">
+					<i class="fas fa-shield-alt me-2"></i> System & Protected Accounts
+				</div>
+
+				<div
+					class="card"
+					style="
+						padding: 0;
+						overflow: hidden;
+						background-color: #f8fafc;
+						border: 1px dashed var(--border);
+					"
+				>
+					<div style="overflow-x: auto">
+						<table class="history-table">
+							<thead>
+								<tr>
+									<th style="background: #f8fafc">Account</th>
+									<th style="background: #f8fafc">Role Type</th>
+									<th style="background: #f8fafc">Identifier</th>
+									<th style="background: #f8fafc; text-align: right">Status</th>
+								</tr>
+							</thead>
+							<tbody>
+								{% for user in users if user.is_protected %}
+								<tr style="opacity: 0.8">
+									<td style="font-weight: 600; color: var(--secondary)">
+										<i class="fas fa-robot me-2"></i> {{ user.username }}
+									</td>
+									<td>
+										<span
+											style="
+												font-size: 0.75rem;
+												background: #e2e8f0;
+												padding: 4px 8px;
+												border-radius: 4px;
+												font-weight: 600;
+												color: #475569;
+											"
+										>
+											{{ user.role_label|default('System Service') }}
+										</span>
+									</td>
+									<td style="font-family: monospace; color: var(--text-sub)">
+										{{ user.email or 'N/A' }}
+									</td>
+									<td style="text-align: right">
+										<span style="font-size: 0.75rem; color: var(--text-sub)">
+											<i class="fas fa-lock"></i> Protected
+										</span>
+									</td>
+								</tr>
+								{% else %}
+								<tr>
+									<td
+										colspan="4"
+										style="
+											text-align: center;
+											padding: 20px;
+											color: var(--text-sub);
+										"
+									>
+										No system users found.
+									</td>
+								</tr>
+								{% endfor %}
+							</tbody>
+						</table>
+					</div>
+				</div>
+			</div>
+		</div>
+	</body>
+</html>

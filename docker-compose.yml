@@ -1,9 +1,10 @@
 ---
 name: Auth Service
+
 services:
   postgresql:
-    container_name: authentik-postgresql
-    hostname: authentik-postgresql
+    container_name: postgresql
+    hostname: postgresql
     networks:
       - project-1
     environment:
@@ -21,6 +22,7 @@ services:
     image: docker.io/library/postgres:16-alpine
     volumes:
     - database:/var/lib/postgresql/data
+
   authentik-server:
     container_name: authentik-server
     hostname: authentik-server
@@ -38,7 +40,8 @@ services:
       AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?secret key required}
     image: ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server}:${AUTHENTIK_TAG:-2025.12.1}
     networks:
-      - project-1
+      project-1:
+        ipv4_address: 172.23.11.100
     labels:
       - traefik.enable=true
       - traefik.http.routers.authentik.rule=Host(`auth.localhost`)
@@ -87,6 +90,7 @@ services:
       - /etc/localtime:/etc/localtime:ro
     networks:
       - project-1
+
   prometheus:
     container_name: prometheus
     hostname: prometheus
@@ -104,6 +108,7 @@ services:
       - traefik.http.routers.prom.service=prom
     networks:
       - project-1
+
   email:
     container_name: email
     hostname: email
@@ -122,6 +127,7 @@ services:
       - traefik.http.routers.email.entrypoints=web
       - traefik.http.services.email.loadbalancer.server.port=8080
       - traefik.http.routers.email.service=email
+
   traefik:
     container_name: traefik
     hostname: traefik
@@ -138,27 +144,7 @@ services:
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
-  lldap:
-    container_name: lldap
-    hostname: lldap
-    image: lldap/lldap:stable
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.lldap.rule=Host(`lldap.localhost`)
-      - traefik.http.routers.lldap.entrypoints=web
-      - traefik.http.services.lldap.loadbalancer.server.port=17170
-      - traefik.http.routers.lldap.service=lldap
-    environment:
-      TZ: Asia/Jakarta
-      LLDAP_JWT_SECRET: ${LLDAP_JWT_SECRET}
-      LLDAP_KEY_SEED: ${LLDAP_KEY_SEED}
-      LLDAP_LDAP_BASE_DN: dc=test,dc=local
-      LLDAP_LDAP_USER_PASS: adminadmin
-    networks:
-      - project-1
-    volumes:
-      - lldap:/data
-      - /etc/localtime:/etc/localtime:ro
+
   app-web:
     container_name: app-web
     hostname: app-web
@@ -177,11 +163,11 @@ services:
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - ./.env:/app/.env:ro
+
   app-pinger:
     container_name: app-pinger
     hostname: app-pinger
     depends_on:
-      - lldap
       - prometheus
       - email
     build:
@@ -195,17 +181,47 @@ services:
       - /etc/localtime:/etc/localtime:ro
     networks:
       - project-1
+
+  app-manager:
+    container_name: app-manager
+    hostname: app-manager
+    depends_on:
+      - email
+      - authentik-server
+      - authentik-worker
+    build:
+      context: ./manager
+    environment:
+      PYTHONUNBUFFERED: 1
+      PYTHONIOENCODING: UTF-8
+    networks:
+      - project-1
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.manager.rule=Host(`manager.localhost`)
+      - traefik.http.routers.apmanagerpmanager.entrypoints=web
+      - traefik.http.services.manager.loadbalancer.server.port=5001
+      - traefik.http.routers.manager.service=manager
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./.env:/app/.env:ro
+      - manager:/db
+
 volumes:
   pinger:
-    driver: local
   email:
-    driver: local
-  lldap:
-    driver: local
   data:
   certs:
   custom-templates:
   database:
+  manager:
   
 networks:
   project-1:
+    driver_opts:
+      com.docker.network.bridge.name: project-1
+    enable_ipv6: true
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.23.11.0/24

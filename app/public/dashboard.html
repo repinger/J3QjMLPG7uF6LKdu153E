@@ -26,12 +26,54 @@
 		/>
 		<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 		<link rel="stylesheet" href="/css/style.css" />
+
+		<style>
+			.user-profile-section {
+				display: flex;
+				align-items: center;
+				gap: 12px;
+				margin-right: 15px;
+				padding-right: 20px;
+				border-right: 1px solid #e2e8f0; /* Border abu-abu halus */
+				height: 32px;
+			}
+			.user-info-text {
+				display: flex;
+				flex-direction: column;
+				justify-content: center;
+				text-align: right;
+			}
+			.user-name {
+				font-weight: 700;
+				font-size: 0.9rem;
+				color: #0f172a; /* Warna Gelap */
+				line-height: 1.2;
+			}
+			.user-role {
+				font-size: 0.75rem;
+				color: #64748b; /* Warna Abu-abu */
+				text-transform: uppercase;
+				letter-spacing: 0.5px;
+			}
+			.user-avatar {
+				width: 38px;
+				height: 38px;
+				background: #f1f5f9; /* Abu-abu sangat muda */
+				border-radius: 50%;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				border: 1px solid #e2e8f0;
+				color: #4f46e5; /* Icon Primary Color */
+			}
+		</style>
 	</head>
 	<body class="auth-pending">
 		<div id="toast-container"></div>
 
 		<header>
 			<div class="brand"><i class="fas fa-satellite-dish"></i> Monitorr</div>
+
 			<div class="nav-pills">
 				<button
 					id="nav-map"
@@ -44,6 +86,7 @@
 					<i class="fas fa-server"></i> Manage Node
 				</button>
 			</div>
+
 			<div
 				class="header-right"
 				style="display: flex; align-items: center; gap: 15px"
@@ -64,36 +107,77 @@
 								right: 5px;
 								width: 8px;
 								height: 8px;
-								background: red;
+								background: #ef4444;
 								border-radius: 50%;
 								box-shadow: 0 0 0 2px white;
 							"
 						></span>
 					</button>
-					<div id="notif-dropdown" class="notif-dropdown" style="display: none">
-						<div class="notif-header">
-							<span>Notifications</span>
-							<button
-								onclick="markRead()"
-								style="
-									font-size: 0.7rem;
-									background: none;
-									border: none;
-									color: #4f46e5;
-									cursor: pointer;
-									font-weight: 700;
-								"
+					<div
+						id="notif-dropdown"
+						class="notif-dropdown"
+						style="display: none; top: 50px"
+					>
+						<div
+							class="notif-header"
+							style="
+								display: flex;
+								justify-content: space-between;
+								align-items: center;
+								padding: 10px 15px;
+								border-bottom: 1px solid #e2e8f0;
+							"
+						>
+							<span style="font-weight: 700; color: #0f172a"
+								>Notifications</span
 							>
-								Mark Read
-							</button>
+							<div style="display: flex; gap: 10px">
+								<button
+									onclick="markRead()"
+									style="
+										font-size: 0.75rem;
+										background: none;
+										border: none;
+										color: var(--primary);
+										cursor: pointer;
+										font-weight: 600;
+									"
+								>
+									Mark Read
+								</button>
+								<button
+									onclick="clearNotifications()"
+									style="
+										font-size: 0.75rem;
+										background: none;
+										border: none;
+										color: #ef4444;
+										cursor: pointer;
+										font-weight: 600;
+									"
+									title="Hapus Semua"
+								>
+									Clear All
+								</button>
+							</div>
 						</div>
 						<div id="notif-list" class="notif-list"></div>
 					</div>
 				</div>
 
-				<a href="/auth/logout" class="btn-logout"
-					><i class="fas fa-power-off"></i> Keluar</a
-				>
+				<div class="user-profile-section">
+					<div class="user-info-text">
+						<div id="nav-username" class="user-name">Loading...</div>
+						<div id="nav-role" class="user-role">...</div>
+					</div>
+					<div class="user-avatar">
+						<i class="fas fa-user"></i>
+					</div>
+				</div>
+
+				<a href="/auth/logout" class="btn-logout" title="Keluar">
+					<i class="fas fa-power-off"></i>
+				</a>
 			</div>
 		</header>
 
