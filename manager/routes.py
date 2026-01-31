@@ -100,16 +100,45 @@ def dashboard():
     apps = authentik.get_apps()
     providers = authentik.get_oauth_providers()
     
-    # Map Provider ID -> Redirect URIs
-    provider_map = {}
-    for prov in providers:
-        urls = [u.get('url') for u in prov.get('redirect_uris', [])]
-        provider_map[prov['pk']] = "\n".join(urls)
+    # 1. Map Provider ID -> Provider Object (untuk akses cepat client_id/secret)
+    provider_dict = {p['pk']: p for p in providers}
 
-    # Inject data provider ke Apps
+    # 2. Inject Data ke Object Apps
     for app in apps:
         prov_id = app.get('provider')
-        app['redirect_uris_str'] = provider_map.get(prov_id, "")
+        prov_obj = provider_dict.get(prov_id)
+        
+        # A. Inject Credentials & Redirect URIs
+        if prov_obj:
+            app['client_id'] = prov_obj.get('client_id')
+            app['client_secret'] = prov_obj.get('client_secret')
+            urls = [u.get('url') for u in prov_obj.get('redirect_uris', [])]
+            app['redirect_uris_str'] = "\n".join(urls)
+        else:
+            app['client_id'] = "-"
+            app['client_secret'] = "-"
+            app['redirect_uris_str'] = ""
+
+        # [BARU] B. Fetch OIDC Endpoints dari API Authentik
+        # Menggunakan slug aplikasi untuk mengambil .well-known config
+        oidc_conf = authentik.get_oidc_configuration(app['slug'])
+        
+        app['endpoints'] = {
+            'issuer': oidc_conf.get('issuer', 'Unavailable'),
+            'authorize': oidc_conf.get('authorization_endpoint', '-'),
+            'token': oidc_conf.get('token_endpoint', '-'),
+            'userinfo': oidc_conf.get('userinfo_endpoint', '-')
+        }
+
+        # C. Inject Group Bindings (Fitur sebelumnya)
+        bindings = authentik.get_policy_bindings_by_target(app['pk'])
+        app['bound_group_ids'] = [b.get('group') for b in bindings if b.get('group')]
+        
+        bound_names = []
+        for bg_id in app['bound_group_ids']:
+            g_obj = next((g for g in groups if g['pk'] == bg_id), None)
+            if g_obj: bound_names.append(g_obj['name'])
+        app['bound_group_names'] = ", ".join(bound_names)
 
     return render_template('dashboard.html', users=users, groups=groups, apps=apps)
 
@@ -270,18 +299,34 @@ def group_edit(pk):
 @login_required
 def app_create():
     name = request.form.get('name')
-    # Ambil redirect_uri (support singular/plural field name)
     redirect_uri = request.form.get('redirect_uri') or request.form.get('redirect_uris')
     launch_url = request.form.get('launch_url')
     client_type = request.form.get('client_type')
     auth_flow_mode = request.form.get('auth_flow')
+    
+    # [BARU] Ambil list group yang dipilih (multiple select)
+    selected_groups = request.form.getlist('groups') 
 
+    # 1. Buat App & Provider (menggunakan action yang sudah ada)
     success, msg = create_oidc_app_action(
         name, redirect_uri, launch_url, client_type, flow_mode=auth_flow_mode
-        # HAPUS restricted_group
     )
     
-    flash(msg, "success" if success else "danger")
+    if success:
+        # 2. Cari App PK yang baru saja dibuat (berdasarkan slug/nama)
+        # Note: create_oidc_app_action idealnya me-return PK, tapi jika tidak, kita cari manual:
+        all_apps = authentik.get_apps()
+        # Cari app dengan nama yang sama (ini pendekatan naif, idealnya pakai slug return dari action)
+        new_app = next((a for a in all_apps if a['name'] == name), None)
+        
+        if new_app and selected_groups:
+            for grp_pk in selected_groups:
+                authentik.create_policy_binding(new_app['pk'], grp_pk)
+        
+        flash("Application created with bindings.", "success")
+    else:
+        flash(msg, "danger")
+        
     return redirect(url_for('routes.dashboard'))
 
 def ensure_url(url):
@@ -298,14 +343,39 @@ def app_edit(pk):
     launch_url = ensure_url(request.form.get('launch_url'))
     redirect_uris_raw = request.form.get('redirect_uris')
     
+    # [BARU] Ambil list group dari form (ini adalah group yang diinginkan user)
+    submitted_group_ids = set(request.form.getlist('groups'))
+
     redirect_uris_list = None
     if redirect_uris_raw:
         redirect_uris_list = [ensure_url(u) for u in redirect_uris_raw.replace('\r\n', '\n').split('\n') if u.strip()]
 
+    # 1. Update data dasar App
     res = authentik.update_application(pk, name, launch_url, redirect_uris=redirect_uris_list)
     
     if res.status_code == 200:
-        flash("App updated successfully.", "success")
+        # 2. Handle Group Bindings
+        # Ambil binding yang sudah ada di Authentik sekarang
+        current_bindings = authentik.get_policy_bindings_by_target(pk)
+        
+        # Map: GroupID -> BindingPK (untuk memudahkan penghapusan)
+        existing_map = {b.get('group'): b.get('pk') for b in current_bindings if b.get('group')}
+        existing_group_ids = set(existing_map.keys())
+        
+        # Tentukan mana yang harus ditambah dan dihapus
+        to_add = submitted_group_ids - existing_group_ids
+        to_delete = existing_group_ids - submitted_group_ids
+        
+        # Eksekusi Delete
+        for g_id in to_delete:
+            binding_pk = existing_map[g_id]
+            authentik.delete_policy_binding(binding_pk)
+            
+        # Eksekusi Add
+        for g_id in to_add:
+            authentik.create_policy_binding(pk, g_id)
+
+        flash("App and access groups updated successfully.", "success")
     else:
         flash(f"Failed update info: {res.text}", "danger")
 

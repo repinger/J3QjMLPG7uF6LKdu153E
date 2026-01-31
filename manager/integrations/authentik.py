@@ -98,7 +98,7 @@ def delete_provider(pk):
     url = f"{Config.AUTHENTIK_API_URL}/providers/oauth2/{pk}/"
     requests.delete(url, headers=get_headers())
 
-def create_provider(name, flow_pk, inv_flow_pk, client_type, redirect_uris, slug, secret, mappings):
+def create_provider(name, flow_pk, inv_flow_pk, client_type, redirect_uris, client_id, client_secret, mappings):
     url = f"{Config.AUTHENTIK_API_URL}/providers/oauth2/"
     payload = {
         "name": name,
@@ -106,8 +106,10 @@ def create_provider(name, flow_pk, inv_flow_pk, client_type, redirect_uris, slug
         "invalidation_flow": inv_flow_pk,
         "client_type": client_type,
         "redirect_uris": redirect_uris,
-        "client_id": slug,
-        "client_secret": secret,
+        
+        "client_id": client_id, 
+        "client_secret": client_secret,
+        
         "property_mappings": mappings,
         "sub_mode": "hashed_user_id"
     }
@@ -201,3 +203,58 @@ def get_property_mappings():
                 mappings.append(m_res.json()['results'][0]['pk'])
     except: pass
     return mappings
+
+def get_policy_bindings_by_target(target_pk):
+    """Mengambil semua binding yang terhubung ke target (Application) tertentu."""
+    bindings = []
+    url = f"{Config.AUTHENTIK_API_URL}/policies/bindings/?target={target_pk}&page_size=100"
+    while url:
+        try:
+            res = requests.get(url, headers=get_headers())
+            if res.status_code == 200:
+                data = res.json()
+                bindings.extend(data.get('results', []))
+                url = data.get('pagination', {}).get('next')
+            else: break
+        except: break
+    return bindings
+
+def create_policy_binding(target_pk, group_pk, order=0):
+    """Membuat binding baru (memberi akses Group ke App)."""
+    url = f"{Config.AUTHENTIK_API_URL}/policies/bindings/"
+    payload = {
+        "target": target_pk,
+        "group": group_pk,
+        "enabled": True,
+        "order": order,
+        "negate": False
+    }
+    return requests.post(url, json=payload, headers=get_headers())
+
+def delete_policy_binding(binding_pk):
+    """Menghapus binding (mencabut akses)."""
+    url = f"{Config.AUTHENTIK_API_URL}/policies/bindings/{binding_pk}/"
+    return requests.delete(url, headers=get_headers())
+
+def get_oidc_configuration(slug):
+    """
+    Mengambil metadata OIDC (.well-known) langsung dari Authentik.
+    Ini memastikan kita mendapatkan URL Endpoints yang akurat dari source-nya.
+    """
+    try:
+        # Kita perlu Base URL (tanpa /api/v3).
+        # Contoh Config.AUTHENTIK_API_URL = "http://authentik-server:9000/api/v3"
+        base_url = Config.AUTHENTIK_API_URL.split('/api/v3')[0]
+        
+        # Construct URL Discovery
+        discovery_url = f"{base_url}/application/o/{slug}/.well-known/openid-configuration"
+        
+        # Request ke Authentik
+        res = requests.get(discovery_url, timeout=2)
+        if res.status_code == 200:
+            return res.json()
+    except Exception as e:
+        print(f"[!] Error fetching OIDC Config for {slug}: {e}")
+        
+    # Return dict kosong jika gagal
+    return {}

@@ -1,7 +1,9 @@
 # manager/actions.py
 
-import uuid
-from integrations import authentik, stalwart
+from integrations import authentik
+from config import Config
+from utils import generate_authentik_key
+import re
 
 def ensure_url(url):
     if not url: return ""
@@ -19,42 +21,65 @@ def create_full_user_action(username, name, email, password, group_pk=None):
     stal_res = stalwart.create_mailbox(username, name, password, email)
     return True, auth_res, stal_res
 
-def create_oidc_app_action(name, redirect_uris_str, launch_url, client_type, flow_mode='implicit'):
-    slug = name.lower().replace(" ", "-")
+def create_oidc_app_action(name, redirect_uris_raw, launch_url, client_type='confidential', flow_mode='implicit'):
+    # 1. Generate Slug (URL friendly name)
+    slug = name.lower().strip().replace(' ', '-').replace('/', '-')
+    slug = re.sub(r'[^a-z0-9\-]', '', slug)
     
-    if not redirect_uris_str: redirect_uris_str = ""
-    raw_uris = [ensure_url(u) for u in redirect_uris_str.replace('\r\n', ',').replace('\n', ',').split(',') if u.strip()]
-    redirect_uris_payload = [{"url": uri, "matching_mode": "strict"} for uri in raw_uris]
+    # 2. Prepare Redirect URIs
+    redirect_uris = []
+    if redirect_uris_raw:
+        # Split by newline or comma, and strip whitespace
+        raw_list = re.split(r'[\n,]', redirect_uris_raw)
+        for uri in raw_list:
+            u = uri.strip()
+            if u:
+                redirect_uris.append({"url": u, "matching_mode": "strict"})
 
-    if flow_mode == 'explicit':
-        auth_flow_slug = "default-provider-authorization-explicit-consent"
-    else:
-        auth_flow_slug = "default-provider-authorization-implicit-consent"
-        
-    final_auth_flow = authentik.get_flow_pk(auth_flow_slug)
-    inv_flow = authentik.get_flow_pk("default-provider-invalidation-flow")
+    # 3. Get Dependencies (Flows & Mappings)
+    # Gunakan flow default atau flow spesifik
+    flow_slug = 'default-provider-authorization-implicit-consent' if flow_mode == 'implicit' else 'default-provider-authorization-explicit-consent'
     
-    if not final_auth_flow: return False, f"Error: Flow '{auth_flow_slug}' not found."
-    if not inv_flow: return False, "Error: Default Invalidation Flow not found."
+    auth_flow_pk = authentik.get_flow_pk(flow_slug)
+    # Fallback jika flow implicit tidak ketemu, pakai default explicit
+    if not auth_flow_pk:
+        auth_flow_pk = authentik.get_flow_pk('default-provider-authorization-explicit-consent')
+        
+    inv_flow_pk = authentik.get_flow_pk('default-provider-invalidation-flow')
+    property_mappings = authentik.get_property_mappings()
 
-    mappings = authentik.get_property_mappings()
-    secret = str(uuid.uuid4())[:40]
+    if not auth_flow_pk:
+        return False, "Error: Default Authorization Flow not found in Authentik."
+
+    # 4. [BARU] GENERATE CREDENTIALS SEPERTI AUTHENTIK
+    # Authentik standard: Client ID (40 chars), Secret (128 chars)
+    new_client_id = generate_authentik_key(40)
+    new_client_secret = generate_authentik_key(128)
+
+    # 5. Create Provider
+    # Perhatikan kita mengirim new_client_id, bukan slug
+    prov_res = authentik.create_provider(
+        name=name,
+        flow_pk=auth_flow_pk,
+        inv_flow_pk=inv_flow_pk,
+        client_type=client_type,
+        redirect_uris=redirect_uris,
+        client_id=new_client_id,      # Parameter baru
+        client_secret=new_client_secret, # Parameter baru
+        mappings=property_mappings
+    )
+
+    if prov_res.status_code != 201:
+        return False, f"Provider Creation Failed: {prov_res.text}"
     
-    prov_res = authentik.create_provider(name, final_auth_flow, inv_flow, client_type, redirect_uris_payload, slug, secret, mappings)
-    
-    if prov_res.status_code == 403: return False, "Permission Denied: Need 'authentik Admins'."
-    if prov_res.status_code != 201: return False, f"Provider Error: {prov_res.text}"
-        
     provider_pk = prov_res.json()['pk']
 
-    final_launch_url = ensure_url(launch_url)
-    if not final_launch_url and raw_uris:
-        final_launch_url = raw_uris[0]
-        
-    app_res = authentik.create_application(name, slug, provider_pk, final_launch_url)
+    # 6. Create Application
+    app_res = authentik.create_application(name, slug, provider_pk, launch_url)
     
-    if app_res.status_code != 201:
+    if app_res.status_code == 201:
+        return True, "Application created successfully."
+    else:
+        # Rollback (hapus provider jika app gagal)
         authentik.delete_provider(provider_pk)
-        return False, f"App Error: {app_res.text}"
-    
-    return True, "Application created successfully."
+        return False, f"App Creation Failed: {app_res.text}"

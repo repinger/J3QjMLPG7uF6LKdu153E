@@ -206,6 +206,7 @@
 								<th>Name</th>
 								<th>Slug</th>
 								<th>Launch URL</th>
+								<th>Access</th>
 								<th style="text-align: right">Actions</th>
 							</tr>
 						</thead>
@@ -227,18 +228,71 @@
 										target="_blank"
 										class="btn btn-sm"
 										style="background: #f1f5f9"
-										>Launch <i class="fas fa-external-link-alt"></i
-									></a>
+									>
+										Launch <i class="fas fa-external-link-alt"></i>
+									</a>
 									{% else %} - {% endif %}
 								</td>
+
+								<td>
+									{% if app.bound_group_names %}
+									<span
+										style="
+											font-size: 0.85rem;
+											color: #0f172a;
+											background: #e2e8f0;
+											padding: 2px 6px;
+											border-radius: 4px;
+										"
+									>
+										<i class="fas fa-users" style="margin-right: 4px"></i> {{
+										app.bound_group_names }}
+									</span>
+									{% else %}
+									<span
+										class="badge"
+										style="background: #dcfce7; color: #166534"
+										>Everyone</span
+									>
+									{% endif %}
+								</td>
+
 								<td style="text-align: right">
 									<button
-										onclick="openEditApp('{{ app.pk }}', '{{ app.name }}', '{{ app.meta_launch_url or '' }}', `{{ app.redirect_uris_str }}`)"
+										onclick='openAppInfo(
+            "{{ app.name }}",
+            "{{ app.client_id }}",
+            "{{ app.client_secret }}",
+            "{{ app.endpoints.issuer }}",
+            "{{ app.endpoints.authorize }}",
+            "{{ app.endpoints.token }}"
+        )'
+										class="btn btn-sm"
+										style="
+											background: #fff7ed;
+											color: #ea580c;
+											border: 1px solid #fed7aa;
+											margin-right: 4px;
+										"
+										title="Show Connection Info"
+									>
+										<i class="fas fa-key"></i>
+									</button>
+
+									<button
+										onclick='openEditApp(
+            "{{ app.pk }}", 
+            "{{ app.name }}", 
+            "{{ app.meta_launch_url or "" }}", 
+            `{{ app.redirect_uris_str }}`,
+            {{ app.bound_group_ids | tojson }}
+        )'
 										class="btn btn-sm"
 										style="background: #eff6ff; color: var(--primary)"
 									>
 										<i class="fas fa-edit"></i>
 									</button>
+
 									<form
 										action="/app/delete/{{ app.pk }}"
 										method="POST"
@@ -480,6 +534,24 @@
 						/>
 					</div>
 
+					<div class="form-group">
+						<label>Restricted Groups (Access Control)</label>
+						<select
+							name="groups"
+							class="form-control"
+							multiple
+							style="height: 100px"
+						>
+							{% for group in groups %}
+							<option value="{{ group.pk }}">{{ group.name }}</option>
+							{% endfor %}
+						</select>
+						<small style="color: var(--text-sub)"
+							>Leave empty to allow all users. Hold Ctrl (Windows) or Cmd (Mac)
+							to select multiple.</small
+						>
+					</div>
+
 					<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px">
 						<div class="form-group">
 							<label>Client Type</label>
@@ -552,6 +624,25 @@
 					</div>
 
 					<div class="form-group">
+						<label>Restricted Groups</label>
+						<select
+							name="groups"
+							id="edit-app-groups"
+							class="form-control"
+							multiple
+							style="height: 100px"
+						>
+							{% for group in groups %}
+							<option value="{{ group.pk }}">{{ group.name }}</option>
+							{% endfor %}
+						</select>
+						<small style="color: var(--text-sub)"
+							>Hold Ctrl/Cmd to select multiple. Unselect all to make
+							public.</small
+						>
+					</div>
+
+					<div class="form-group">
 						<label>Redirect URIs</label>
 						<textarea
 							name="redirect_uris"
@@ -584,6 +675,129 @@
 						<button type="submit" class="btn btn-primary">Update & Save</button>
 					</div>
 				</form>
+			</div>
+		</div>
+
+		<div id="modal-app-info" class="modal">
+			<div class="modal-content" style="width: 600px; max-width: 90%">
+				<h3>Connection Details</h3>
+				<p
+					style="
+						color: var(--text-sub);
+						margin-bottom: 1.5rem;
+						font-size: 0.9rem;
+					"
+				>
+					Use these parameters to configure your OIDC client (Grafana, Jenkins,
+					Portainer, etc).
+				</p>
+
+				<div class="form-group">
+					<label>Application Name</label>
+					<input
+						type="text"
+						id="info-app-name"
+						class="form-control"
+						readonly
+						style="background: #f8fafc; font-weight: 600"
+					/>
+				</div>
+
+				<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px">
+					<div class="form-group">
+						<label>Client ID</label>
+						<div style="display: flex; gap: 5px">
+							<input
+								type="text"
+								id="info-client-id"
+								class="form-control"
+								readonly
+								style="font-family: monospace; background: #f1f5f9"
+							/>
+							<button
+								class="btn btn-sm"
+								onclick="copyToClipboard('info-client-id')"
+								title="Copy"
+							>
+								<i class="fas fa-copy"></i>
+							</button>
+						</div>
+					</div>
+					<div class="form-group">
+						<label>Client Secret</label>
+						<div style="display: flex; gap: 5px">
+							<input
+								type="text"
+								id="info-client-secret"
+								class="form-control"
+								readonly
+								style="font-family: monospace; background: #f1f5f9"
+							/>
+							<button
+								class="btn btn-sm"
+								onclick="copyToClipboard('info-client-secret')"
+								title="Copy"
+							>
+								<i class="fas fa-copy"></i>
+							</button>
+						</div>
+					</div>
+				</div>
+
+				<div class="form-group">
+					<label>Issuer URL (Discovery)</label>
+					<div style="display: flex; gap: 5px">
+						<input
+							type="text"
+							id="info-issuer"
+							class="form-control"
+							readonly
+							style="font-family: monospace; color: var(--primary)"
+						/>
+						<button
+							class="btn btn-sm"
+							onclick="copyToClipboard('info-issuer')"
+							title="Copy"
+						>
+							<i class="fas fa-copy"></i>
+						</button>
+					</div>
+					<small style="color: var(--text-sub)"
+						>Paste this into "OIDC Discovery URL" fields usually.</small
+					>
+				</div>
+
+				<div class="form-group">
+					<label>Authorize Endpoint</label>
+					<input
+						type="text"
+						id="info-auth-url"
+						class="form-control"
+						readonly
+						style="font-family: monospace; font-size: 0.85rem"
+					/>
+				</div>
+
+				<div class="form-group">
+					<label>Token Endpoint</label>
+					<input
+						type="text"
+						id="info-token-url"
+						class="form-control"
+						readonly
+						style="font-family: monospace; font-size: 0.85rem"
+					/>
+				</div>
+
+				<div style="text-align: right; margin-top: 1.5rem">
+					<button
+						type="button"
+						class="btn btn-primary"
+						onclick="closeModal('modal-app-info')"
+					>
+						Close
+					</button>
+				</div>
 			</div>
 		</div>
 

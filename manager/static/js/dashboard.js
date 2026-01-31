@@ -38,17 +38,37 @@ function openEditGroup(pk, name) {
 	}
 }
 
-function openEditApp(pk, name, url, redirectUris) {
+function openEditApp(pk, name, url, redirectUris, boundGroupIds) {
 	const form = document.getElementById("form-edit-app");
 	const inputName = document.getElementById("edit-app-name");
 	const inputUrl = document.getElementById("edit-app-url");
 	const inputRedirects = document.getElementById("edit-app-redirects");
+	const selectGroups = document.getElementById("edit-app-groups"); // Input baru
 
 	if (form) {
+		// 1. Set Action URL & Text Inputs
 		form.action = "/app/edit/" + pk;
 		if (inputName) inputName.value = name;
 		if (inputUrl) inputUrl.value = url;
 		if (inputRedirects) inputRedirects.value = redirectUris || "";
+
+		// 2. Handle Group Selection (Multi-select Logic)
+		if (selectGroups) {
+			// Reset semua pilihan terlebih dahulu
+			for (let i = 0; i < selectGroups.options.length; i++) {
+				selectGroups.options[i].selected = false;
+			}
+
+			// Jika ada data boundGroupIds (array), pilih opsi yang sesuai
+			if (boundGroupIds && Array.isArray(boundGroupIds)) {
+				for (let i = 0; i < selectGroups.options.length; i++) {
+					// Jika value option ada di dalam array boundGroupIds, set selected=true
+					if (boundGroupIds.includes(selectGroups.options[i].value)) {
+						selectGroups.options[i].selected = true;
+					}
+				}
+			}
+		}
 
 		openModal("modal-edit-app");
 	}
@@ -81,3 +101,34 @@ document.addEventListener("DOMContentLoaded", () => {
 		openTab("tab-users");
 	}
 });
+
+function openAppInfo(name, clientId, clientSecret, issuer, authUrl, tokenUrl) {
+	document.getElementById("info-app-name").value = name;
+	document.getElementById("info-client-id").value = clientId;
+	document.getElementById("info-client-secret").value = clientSecret;
+	document.getElementById("info-issuer").value = issuer;
+	document.getElementById("info-auth-url").value = authUrl;
+	document.getElementById("info-token-url").value = tokenUrl;
+
+	openModal("modal-app-info");
+}
+
+function copyToClipboard(elementId) {
+	const copyText = document.getElementById(elementId);
+	copyText.select();
+	copyText.setSelectionRange(0, 99999); // Untuk mobile
+
+	try {
+		navigator.clipboard.writeText(copyText.value);
+
+		// Efek visual tombol berubah jadi centang sebentar
+		const btn = copyText.nextElementSibling;
+		const originalHtml = btn.innerHTML;
+		btn.innerHTML = '<i class="fas fa-check" style="color: green;"></i>';
+		setTimeout(() => {
+			btn.innerHTML = originalHtml;
+		}, 1500);
+	} catch (err) {
+		console.error("Failed to copy", err);
+	}
+}
