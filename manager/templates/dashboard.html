@@ -1,0 +1,812 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Admin Console</title>
+		<link
+			href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+			rel="stylesheet"
+		/>
+		<link
+			href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+			rel="stylesheet"
+		/>
+		<link
+			rel="stylesheet"
+			href="{{ url_for('static', filename='css/dashboard.css') }}"
+		/>
+	</head>
+	<body>
+		<header>
+			<div class="brand"><i class="fas fa-layer-group"></i> Admin Console</div>
+			<div style="display: flex; align-items: center; gap: 1rem">
+				<span style="font-size: 0.9rem; font-weight: 600"
+					>{{ session['user'] }}</span
+				>
+				<a href="/logout" class="btn btn-danger btn-sm"
+					><i class="fas fa-sign-out-alt"></i
+				></a>
+			</div>
+		</header>
+
+		<div class="container">
+			{% with messages = get_flashed_messages(with_categories=true) %} {% if
+			messages %} {% for category, message in messages %}
+			<div
+				class="alert"
+				style="background: {{ '#dcfce7' if category == 'success' else '#fee2e2' }}; color: {{ '#166534' if category == 'success' else '#b91c1c' }};"
+			>
+				<i
+					class="fas {{ 'fa-check-circle' if category == 'success' else 'fa-exclamation-circle' }}"
+				></i>
+				{{ message }}
+			</div>
+			{% endfor %} {% endif %} {% endwith %}
+
+			<div class="tabs">
+				<button class="tab-btn active" onclick="openTab('tab-users')">
+					Users
+				</button>
+				<button class="tab-btn" onclick="openTab('tab-groups')">Groups</button>
+				<button class="tab-btn" onclick="openTab('tab-apps')">
+					Applications
+				</button>
+				<button class="tab-btn" onclick="openTab('tab-invite')">
+					Invitations
+				</button>
+			</div>
+
+			<div id="tab-users" class="tab-content active">
+				<div class="card">
+					<div class="toolbar">
+						<h3>Managed Users</h3>
+						<button
+							onclick="openModal('modal-create-user')"
+							class="btn btn-primary"
+						>
+							<i class="fas fa-plus"></i> New User
+						</button>
+					</div>
+					<table>
+						<thead>
+							<tr>
+								<th>User</th>
+								<th>Email</th>
+								<th>Status</th>
+								<th>Groups</th>
+								<th style="text-align: right">Actions</th>
+							</tr>
+						</thead>
+						<tbody>
+							{% for user in users if not user.is_protected %}
+							<tr>
+								<td>
+									<div style="font-weight: 600">{{ user.username }}</div>
+									<div style="font-size: 0.8rem; color: var(--text-sub)">
+										{{ user.name }}
+									</div>
+								</td>
+								<td style="font-family: monospace">{{ user.email }}</td>
+								<td>
+									{% if user.is_active %}<span class="badge bg-green"
+										>Active</span
+									>
+									{% else %}<span class="badge" style="background: #e2e8f0"
+										>Inactive</span
+									>{% endif %}
+								</td>
+								<td>{{ user.groups|length }} Groups</td>
+								<td style="text-align: right">
+									<button
+										onclick="openEditUser('{{ user.pk }}', '{{ user.name }}', '{{ user.email }}')"
+										class="btn btn-sm"
+										style="background: #eff6ff; color: var(--primary)"
+									>
+										<i class="fas fa-edit"></i>
+									</button>
+									<form
+										action="/delete/{{ user.pk }}"
+										method="POST"
+										style="display: inline"
+										onsubmit="return confirm('Delete user?');"
+									>
+										<input
+											type="hidden"
+											name="username_hidden"
+											value="{{ user.username }}"
+										/>
+										<button class="btn btn-danger btn-sm">
+											<i class="fas fa-trash"></i>
+										</button>
+									</form>
+								</td>
+							</tr>
+							{% endfor %}
+						</tbody>
+					</table>
+				</div>
+			</div>
+
+			<div id="tab-groups" class="tab-content">
+				<div class="card">
+					<div class="toolbar">
+						<h3>Authentik Groups</h3>
+						<button
+							onclick="openModal('modal-create-group')"
+							class="btn btn-primary"
+						>
+							<i class="fas fa-plus"></i> New Group
+						</button>
+					</div>
+					<table>
+						<thead>
+							<tr>
+								<th>Group Name</th>
+								<th>Type</th>
+								<th style="text-align: right">Actions</th>
+							</tr>
+						</thead>
+						<tbody>
+							{# --- [SAFE] Tabel ini menggunakan variabel 'groups' yang sudah
+							difilter --- #} {% for group in groups %}
+							<tr>
+								<td style="font-weight: 600">{{ group.name }}</td>
+								<td>
+									{% if group.is_superuser %}<span
+										class="badge"
+										style="background: #fef3c7; color: #b45309"
+										>Superuser</span
+									>
+									{% else %}<span
+										class="badge"
+										style="background: #f1f5f9; color: #64748b"
+										>Standard</span
+									>{% endif %}
+								</td>
+								<td style="text-align: right">
+									<button
+										onclick="openEditGroup('{{ group.pk }}', '{{ group.name }}')"
+										class="btn btn-sm"
+										style="background: #eff6ff; color: var(--primary)"
+									>
+										<i class="fas fa-edit"></i>
+									</button>
+									<form
+										action="/group/delete/{{ group.pk }}"
+										method="POST"
+										style="display: inline"
+										onsubmit="return confirm('Delete Group?');"
+									>
+										<button class="btn btn-danger btn-sm">
+											<i class="fas fa-trash"></i>
+										</button>
+									</form>
+								</td>
+							</tr>
+							{% endfor %}
+						</tbody>
+					</table>
+				</div>
+			</div>
+
+			<div id="tab-apps" class="tab-content">
+				<div class="card">
+					<div class="toolbar">
+						<h3>OIDC Applications</h3>
+						<button
+							onclick="openModal('modal-create-app')"
+							class="btn btn-primary"
+						>
+							<i class="fas fa-magic"></i> New App
+						</button>
+					</div>
+					<table>
+						<thead>
+							<tr>
+								<th>Name</th>
+								<th>Slug</th>
+								<th>Launch URL</th>
+								<th>Access</th>
+								<th style="text-align: right">Actions</th>
+							</tr>
+						</thead>
+						<tbody>
+							{% for app in apps %}
+							<tr>
+								<td>
+									<div style="font-weight: 600">{{ app.name }}</div>
+									<div style="font-size: 0.8rem; color: var(--text-sub)">
+										{{ app.provider_obj.component if app.provider_obj else 'No
+										Provider' }}
+									</div>
+								</td>
+								<td>{{ app.slug }}</td>
+								<td>
+									{% if app.meta_launch_url %}
+									<a
+										href="{{ app.meta_launch_url }}"
+										target="_blank"
+										class="btn btn-sm"
+										style="background: #f1f5f9"
+									>
+										Launch <i class="fas fa-external-link-alt"></i>
+									</a>
+									{% else %} - {% endif %}
+								</td>
+
+								<td>
+									{% if app.bound_group_names %}
+									<span
+										style="
+											font-size: 0.85rem;
+											color: #0f172a;
+											background: #e2e8f0;
+											padding: 2px 6px;
+											border-radius: 4px;
+										"
+									>
+										<i class="fas fa-users" style="margin-right: 4px"></i> {{
+										app.bound_group_names }}
+									</span>
+									{% else %}
+									<span
+										class="badge"
+										style="background: #dcfce7; color: #166534"
+										>Everyone</span
+									>
+									{% endif %}
+								</td>
+
+								<td style="text-align: right">
+									<button
+										onclick='openAppInfo(
+            "{{ app.name }}",
+            "{{ app.client_id }}",
+            "{{ app.client_secret }}",
+            "{{ app.endpoints.issuer }}",
+            "{{ app.endpoints.authorize }}",
+            "{{ app.endpoints.token }}"
+        )'
+										class="btn btn-sm"
+										style="
+											background: #fff7ed;
+											color: #ea580c;
+											border: 1px solid #fed7aa;
+											margin-right: 4px;
+										"
+										title="Show Connection Info"
+									>
+										<i class="fas fa-key"></i>
+									</button>
+
+									<button
+										onclick='openEditApp(
+            "{{ app.pk }}", 
+            "{{ app.name }}", 
+            "{{ app.meta_launch_url or "" }}", 
+            `{{ app.redirect_uris_str }}`,
+            {{ app.bound_group_ids | tojson }}
+        )'
+										class="btn btn-sm"
+										style="background: #eff6ff; color: var(--primary)"
+									>
+										<i class="fas fa-edit"></i>
+									</button>
+
+									<form
+										action="/app/delete/{{ app.pk }}"
+										method="POST"
+										style="display: inline"
+										onsubmit="return confirm('Delete Application?');"
+									>
+										<button class="btn btn-danger btn-sm">
+											<i class="fas fa-trash"></i>
+										</button>
+									</form>
+								</td>
+							</tr>
+							{% endfor %}
+						</tbody>
+					</table>
+				</div>
+			</div>
+
+			<div id="tab-invite" class="tab-content">
+				<div class="card" style="padding: 2rem; text-align: center">
+					<h3 style="margin-top: 0">Send Invitation</h3>
+					<p style="color: var(--text-sub)">
+						Create a token and email it to a new user.
+					</p>
+					<form
+						action="/invite"
+						method="POST"
+						style="max-width: 400px; margin: 0 auto"
+					>
+						<input
+							type="email"
+							name="email"
+							class="form-control"
+							placeholder="Email Address"
+							required
+							style="margin-bottom: 10px"
+						/>
+						<select
+							name="group"
+							class="form-control"
+							required
+							style="margin-bottom: 10px"
+						>
+							<option value="" disabled selected>-- Select Group --</option>
+							{# --- [UPDATE] Dropdown Invite gunakan all_groups --- #} {% for
+							group in all_groups %}
+							<option value="{{ group.pk }}">{{ group.name }}</option>
+							{% endfor %}
+						</select>
+						<button class="btn btn-primary" style="width: 100%">
+							Send Invite
+						</button>
+					</form>
+				</div>
+			</div>
+		</div>
+
+		<div id="modal-create-user" class="modal">
+			<div class="modal-content">
+				<h3>Create New User</h3>
+				<form action="/create" method="POST">
+					<div class="form-group">
+						<label>Username</label>
+						<input type="text" name="username" class="form-control" required />
+					</div>
+					<div class="form-group">
+						<label>Password</label>
+						<input
+							type="password"
+							name="password"
+							class="form-control"
+							minlength="8"
+							required
+						/>
+						<input
+							type="password"
+							name="confirm_password"
+							class="form-control"
+							placeholder="Confirm"
+							style="margin-top: 5px"
+							required
+						/>
+					</div>
+					<div class="form-group">
+						<label>Assign Group</label>
+						<select name="group" class="form-control">
+							{# --- [UPDATE] Dropdown Create User gunakan all_groups --- #} {%
+							for group in all_groups %}
+							<option value="{{ group.pk }}">{{ group.name }}</option>
+							{% endfor %}
+						</select>
+					</div>
+					<div style="text-align: right">
+						<button
+							type="button"
+							class="btn btn-danger"
+							onclick="closeModal('modal-create-user')"
+						>
+							Cancel
+						</button>
+						<button type="submit" class="btn btn-primary">Create</button>
+					</div>
+				</form>
+			</div>
+		</div>
+
+		<div id="modal-edit-user" class="modal">
+			<div class="modal-content">
+				<h3>Edit User</h3>
+				<form id="form-edit-user" method="POST">
+					<div class="form-group">
+						<label>Full Name</label>
+						<input
+							type="text"
+							name="name"
+							id="edit-name"
+							class="form-control"
+						/>
+					</div>
+					<div class="form-group">
+						<label>Email</label>
+						<input
+							type="email"
+							name="email"
+							id="edit-email"
+							class="form-control"
+						/>
+					</div>
+					<div class="form-group">
+						<label>Update Group Assignment</label>
+						<select
+							name="groups"
+							class="form-control"
+							multiple
+							style="height: 100px"
+						>
+							{# --- [UPDATE] Dropdown Edit User gunakan all_groups --- #} {%
+							for group in all_groups %}
+							<option value="{{ group.pk }}">{{ group.name }}</option>
+							{% endfor %}
+						</select>
+						<small style="color: var(--text-sub)"
+							>Hold Ctrl to select multiple.</small
+						>
+					</div>
+					<div class="form-group">
+						<label>
+							<input type="checkbox" name="is_active" checked /> User is Active
+						</label>
+					</div>
+					<div style="text-align: right">
+						<button
+							type="button"
+							class="btn btn-danger"
+							onclick="closeModal('modal-edit-user')"
+						>
+							Cancel
+						</button>
+						<button type="submit" class="btn btn-primary">Save Changes</button>
+					</div>
+				</form>
+			</div>
+		</div>
+
+		<div id="modal-create-group" class="modal">
+			<div class="modal-content">
+				<h3>Create Group</h3>
+				<form action="/group/create" method="POST">
+					<div class="form-group">
+						<label>Group Name</label>
+						<input
+							type="text"
+							name="name"
+							class="form-control"
+							required
+							placeholder="e.g. DevOps"
+						/>
+					</div>
+					<div style="text-align: right">
+						<button
+							type="button"
+							class="btn btn-danger"
+							onclick="closeModal('modal-create-group')"
+						>
+							Cancel
+						</button>
+						<button type="submit" class="btn btn-primary">Create</button>
+					</div>
+				</form>
+			</div>
+		</div>
+
+		<div id="modal-edit-group" class="modal">
+			<div class="modal-content">
+				<h3>Edit Group</h3>
+				<form id="form-edit-group" method="POST">
+					<div class="form-group">
+						<label>Group Name</label>
+						<input
+							type="text"
+							name="name"
+							id="edit-group-name"
+							class="form-control"
+							required
+						/>
+					</div>
+					<div style="text-align: right; margin-top: 1rem">
+						<button
+							type="button"
+							class="btn btn-danger"
+							onclick="closeModal('modal-edit-group')"
+						>
+							Cancel
+						</button>
+						<button type="submit" class="btn btn-primary">Update</button>
+					</div>
+				</form>
+			</div>
+		</div>
+
+		<div id="modal-create-app" class="modal">
+			<div class="modal-content" style="width: 500px">
+				<h3>New OIDC Application</h3>
+				<p
+					style="
+						font-size: 0.85rem;
+						color: var(--text-sub);
+						margin-bottom: 1.5rem;
+					"
+				>
+					Wizard to create Provider & App.
+				</p>
+				<form action="/app/create" method="POST">
+					<div class="form-group">
+						<label>App Name</label>
+						<input
+							type="text"
+							name="name"
+							class="form-control"
+							required
+							placeholder="e.g. Grafana"
+						/>
+					</div>
+
+					<div class="form-group">
+						<label>Restricted Groups (Access Control)</label>
+						<select
+							name="groups"
+							class="form-control"
+							multiple
+							style="height: 100px"
+						>
+							{# --- [UPDATE] Dropdown Create App gunakan all_groups --- #} {%
+							for group in all_groups %}
+							<option value="{{ group.pk }}">{{ group.name }}</option>
+							{% endfor %}
+						</select>
+						<small style="color: var(--text-sub)"
+							>Leave empty to allow all users. Hold Ctrl (Windows) or Cmd (Mac)
+							to select multiple.</small
+						>
+					</div>
+
+					<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px">
+						<div class="form-group">
+							<label>Client Type</label>
+							<select name="client_type" class="form-control">
+								<option value="confidential" selected>Confidential</option>
+								<option value="public">Public (SPA)</option>
+							</select>
+						</div>
+						<div class="form-group">
+							<label>Login Experience</label>
+							<select name="auth_flow" class="form-control">
+								<option value="implicit" selected>
+									Seamless Login (Recommended)
+								</option>
+								<option value="explicit">
+									Require User Consent ("I Agree")
+								</option>
+							</select>
+						</div>
+					</div>
+
+					<div class="form-group">
+						<label>Redirect URIs</label>
+						<textarea
+							name="redirect_uris"
+							class="form-control"
+							rows="2"
+							required
+							placeholder="https://app.example.com/callback"
+						></textarea>
+					</div>
+
+					<div class="form-group">
+						<label>Launch URL (Optional)</label>
+						<input
+							type="text"
+							name="launch_url"
+							class="form-control"
+							placeholder="https://app.example.com"
+						/>
+					</div>
+
+					<div style="text-align: right; margin-top: 1.5rem">
+						<button
+							type="button"
+							class="btn btn-danger"
+							onclick="closeModal('modal-create-app')"
+						>
+							Cancel
+						</button>
+						<button type="submit" class="btn btn-primary">Create App</button>
+					</div>
+				</form>
+			</div>
+		</div>
+
+		<div id="modal-edit-app" class="modal">
+			<div class="modal-content">
+				<h3>Edit Application</h3>
+				<form id="form-edit-app" method="POST">
+					<div class="form-group">
+						<label>App Name</label>
+						<input
+							type="text"
+							name="name"
+							id="edit-app-name"
+							class="form-control"
+							required
+						/>
+					</div>
+
+					<div class="form-group">
+						<label>Restricted Groups</label>
+						<select
+							name="groups"
+							id="edit-app-groups"
+							class="form-control"
+							multiple
+							style="height: 100px"
+						>
+							{# --- [UPDATE] Dropdown Edit App gunakan all_groups --- #} {% for
+							group in all_groups %}
+							<option value="{{ group.pk }}">{{ group.name }}</option>
+							{% endfor %}
+						</select>
+						<small style="color: var(--text-sub)"
+							>Hold Ctrl/Cmd to select multiple. Unselect all to make
+							public.</small
+						>
+					</div>
+
+					<div class="form-group">
+						<label>Redirect URIs</label>
+						<textarea
+							name="redirect_uris"
+							id="edit-app-redirects"
+							class="form-control"
+							rows="3"
+						></textarea>
+						<small style="color: var(--text-sub)"
+							>URLs allowed to handle login callbacks. One per line.</small
+						>
+					</div>
+
+					<div class="form-group">
+						<label>Launch URL</label>
+						<input
+							type="text"
+							name="launch_url"
+							id="edit-app-url"
+							class="form-control"
+						/>
+					</div>
+					<div style="text-align: right; margin-top: 1rem">
+						<button
+							type="button"
+							class="btn btn-danger"
+							onclick="closeModal('modal-edit-app')"
+						>
+							Cancel
+						</button>
+						<button type="submit" class="btn btn-primary">Update & Save</button>
+					</div>
+				</form>
+			</div>
+		</div>
+
+		<div id="modal-app-info" class="modal">
+			<div class="modal-content" style="width: 600px; max-width: 90%">
+				<h3>Connection Details</h3>
+				<p
+					style="
+						color: var(--text-sub);
+						margin-bottom: 1.5rem;
+						font-size: 0.9rem;
+					"
+				>
+					Use these parameters to configure your OIDC client (Grafana, Jenkins,
+					Portainer, etc).
+				</p>
+
+				<div class="form-group">
+					<label>Application Name</label>
+					<input
+						type="text"
+						id="info-app-name"
+						class="form-control"
+						readonly
+						style="background: #f8fafc; font-weight: 600"
+					/>
+				</div>
+
+				<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px">
+					<div class="form-group">
+						<label>Client ID</label>
+						<div style="display: flex; gap: 5px">
+							<input
+								type="text"
+								id="info-client-id"
+								class="form-control"
+								readonly
+								style="font-family: monospace; background: #f1f5f9"
+							/>
+							<button
+								class="btn btn-sm"
+								onclick="copyToClipboard('info-client-id')"
+								title="Copy"
+							>
+								<i class="fas fa-copy"></i>
+							</button>
+						</div>
+					</div>
+					<div class="form-group">
+						<label>Client Secret</label>
+						<div style="display: flex; gap: 5px">
+							<input
+								type="text"
+								id="info-client-secret"
+								class="form-control"
+								readonly
+								style="font-family: monospace; background: #f1f5f9"
+							/>
+							<button
+								class="btn btn-sm"
+								onclick="copyToClipboard('info-client-secret')"
+								title="Copy"
+							>
+								<i class="fas fa-copy"></i>
+							</button>
+						</div>
+					</div>
+				</div>
+
+				<div class="form-group">
+					<label>Issuer URL (Discovery)</label>
+					<div style="display: flex; gap: 5px">
+						<input
+							type="text"
+							id="info-issuer"
+							class="form-control"
+							readonly
+							style="font-family: monospace; color: var(--primary)"
+						/>
+						<button
+							class="btn btn-sm"
+							onclick="copyToClipboard('info-issuer')"
+							title="Copy"
+						>
+							<i class="fas fa-copy"></i>
+						</button>
+					</div>
+					<small style="color: var(--text-sub)"
+						>Paste this into "OIDC Discovery URL" fields usually.</small
+					>
+				</div>
+
+				<div class="form-group">
+					<label>Authorize Endpoint</label>
+					<input
+						type="text"
+						id="info-auth-url"
+						class="form-control"
+						readonly
+						style="font-family: monospace; font-size: 0.85rem"
+					/>
+				</div>
+
+				<div class="form-group">
+					<label>Token Endpoint</label>
+					<input
+						type="text"
+						id="info-token-url"
+						class="form-control"
+						readonly
+						style="font-family: monospace; font-size: 0.85rem"
+					/>
+				</div>
+
+				<div style="text-align: right; margin-top: 1.5rem">
+					<button
+						type="button"
+						class="btn btn-primary"
+						onclick="closeModal('modal-app-info')"
+					>
+						Close
+					</button>
+				</div>
+			</div>
+		</div>
+
+		<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+	</body>
+</html>

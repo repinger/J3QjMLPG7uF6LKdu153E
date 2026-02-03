@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Login - Monitorr</title>
+		<link
+			href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+			rel="stylesheet"
+		/>
+		<link
+			href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+			rel="stylesheet"
+		/>
+		<script
+			src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+			async
+			defer
+		></script>
+
+		<style>
+			:root {
+				--primary: #4f46e5;
+				--text-main: #0f172a;
+			}
+			body {
+				margin: 0;
+				font-family: "Plus Jakarta Sans", sans-serif;
+				height: 100vh;
+				display: flex;
+				overflow: hidden;
+			}
+
+			/* [RESTORED] Style Original untuk panel kiri */
+			.split-left {
+				flex: 1;
+				background-color: var(--primary);
+				/* Pattern background asli */
+				background-image:
+					linear-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1px),
+					linear-gradient(90deg, rgba(255, 255, 255, 0.1) 1px, transparent 1px);
+				background-size: 40px 40px;
+				padding: 3rem;
+				color: white;
+				display: flex;
+				flex-direction: column;
+				justify-content: space-between;
+			}
+
+			.split-right {
+				flex: 1;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				background: white;
+			}
+			.form-container {
+				width: 100%;
+				max-width: 380px;
+				text-align: center;
+			}
+
+			.btn-sso {
+				width: 100%;
+				padding: 1rem;
+				background: var(--text-main);
+				color: white;
+				border: none;
+				border-radius: 12px;
+				font-weight: 600;
+				font-size: 1rem;
+				cursor: pointer;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				gap: 12px;
+				transition: all 0.2s;
+				margin-bottom: 1.5rem;
+			}
+			.btn-sso:hover {
+				background: #1e293b;
+				transform: translateY(-2px);
+			}
+			.btn-sso:disabled {
+				opacity: 0.7;
+				cursor: not-allowed;
+			}
+
+			.captcha-container {
+				display: flex;
+				justify-content: center;
+				margin-bottom: 1.5rem;
+			}
+
+			.error-banner {
+				background: #fee2e2;
+				color: #991b1b;
+				padding: 12px;
+				border-radius: 8px;
+				margin-bottom: 1.5rem;
+				font-size: 0.9rem;
+				display: none;
+			}
+
+			/* [RESTORED] Helper class untuk tipografi asli */
+			.brand-large {
+				font-size: 1.5rem;
+				font-weight: 700;
+				display: flex;
+				align-items: center;
+				gap: 10px;
+			}
+			.quote {
+				font-size: 2rem;
+				font-weight: 700;
+				line-height: 1.2;
+				margin-bottom: 1rem;
+			}
+
+			@media (max-width: 900px) {
+				.split-left {
+					display: none;
+				}
+			}
+		</style>
+	</head>
+	<body>
+		<div class="split-left">
+			<div class="brand-large">
+				<i class="fas fa-satellite-dish"></i> Monitorr
+			</div>
+			<div>
+				<div class="quote">Enterprise Network Monitoring.</div>
+				<div style="opacity: 0.8">
+					Secure and Real-time Infrastructure Insight.
+				</div>
+			</div>
+			<div style="font-size: 0.85rem; opacity: 0.6">
+				&copy; 2026 IT Infrastructure Dept.
+			</div>
+		</div>
+
+		<div class="split-right">
+			<div class="form-container">
+				<div id="errorMsg" class="error-banner"></div>
+
+				<div style="margin-bottom: 2rem">
+					<div
+						style="
+							background: #f1f5f9;
+							width: 80px;
+							height: 80px;
+							border-radius: 50%;
+							display: flex;
+							align-items: center;
+							justify-content: center;
+							margin: 0 auto 1.5rem auto;
+						"
+					>
+						<i
+							class="fas fa-shield-alt"
+							style="font-size: 2rem; color: #64748b"
+						></i>
+					</div>
+					<h2 style="margin: 0 0 8px 0; color: #0f172a">Welcome Back</h2>
+					<p style="margin: 0; color: #64748b">
+						Sign in securely with your corporate account.
+					</p>
+				</div>
+
+				<button id="ssoBtn" class="btn-sso">
+					<i class="fas fa-fingerprint"></i> Sign In with SSO
+				</button>
+
+				<div class="captcha-container">
+					<div
+						class="cf-turnstile"
+						data-sitekey="0x4AAAAAACS8-Z3nEddcM630"
+						data-theme="light"
+					></div>
+				</div>
+
+				<div style="font-size: 0.8rem; color: #94a3b8">
+					By continuing, you agree to the monitoring policy.<br />
+					Protected by Authentik & Cloudflare.
+				</div>
+			</div>
+		</div>
+
+		<script>
+			const btn = document.getElementById("ssoBtn");
+			const err = document.getElementById("errorMsg");
+
+			const params = new URLSearchParams(window.location.search);
+			if (params.get("error")) {
+				err.innerText = "Error: " + decodeURIComponent(params.get("error"));
+				err.style.display = "block";
+				window.history.replaceState({}, document.title, "/login");
+			}
+
+			btn.addEventListener("click", async () => {
+				const tokenInput = document.querySelector(
+					'[name="cf-turnstile-response"]',
+				);
+				const token = tokenInput ? tokenInput.value : null;
+
+				if (!token) {
+					err.innerText = "Please complete the security check below first.";
+					err.style.display = "block";
+					return;
+				}
+
+				btn.disabled = true;
+				btn.innerHTML =
+					'<i class="fas fa-circle-notch fa-spin"></i> Verifying...';
+				err.style.display = "none";
+
+				try {
+					const res = await fetch("/auth/start", {
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({ turnstileToken: token }),
+					});
+
+					const data = await res.json();
+
+					if (data.success && data.redirectUrl) {
+						window.location.href = data.redirectUrl;
+					} else {
+						throw new Error(data.message || "Security check failed.");
+					}
+				} catch (e) {
+					err.innerText = e.message;
+					err.style.display = "block";
+					btn.disabled = false;
+					btn.innerHTML = '<i class="fas fa-fingerprint"></i> Sign In with SSO';
+					if (window.turnstile) turnstile.reset();
+				}
+			});
+		</script>
+	</body>
+</html>

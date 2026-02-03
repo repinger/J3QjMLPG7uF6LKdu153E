@@ -30,9 +30,10 @@ print(f"[*] Loaded .env File    : {loaded_path}")
 # Daftar variabel krusial yang harus dicek
 check_keys = [
     "FLASK_HOST", "FLASK_PORT", 
-    "LDAP_BASE_DN", "LDAP_HOST",
-    "LDAP_BIND_USER", "LDAP_BIND_PASSWORD", "LDAP_ADMIN_GROUP",
-    "TURNSTILE_SITE_KEY", "TURNSTILE_SECRET_KEY"
+    "TURNSTILE_SITE_KEY", "TURNSTILE_SECRET_KEY",
+    "OIDC_REDIRECT_URI", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET",
+    "OIDC_LOGOUT_URL", "OIDC_USERINFO_URL", "OIDC_AUTH_URL",
+    "OIDC_TOKEN_URL", "OIDC_ADMIN_GROUP"
 ]
 
 missing_count = 0
@@ -66,7 +67,7 @@ class Config:
     MAX_DB_HISTORY = int(os.getenv("MAX_DB_HISTORY", 70000))
     FLASK_HOST = os.getenv("FLASK_HOST", "0.0.0.0")
     FLASK_PORT = int(os.getenv("FLASK_PORT", 5000))
-    
+
     # Email Config
     BANDWIDTH_THRESHOLD = int(os.getenv("BANDWIDTH_THRESHOLD", 10000000))
     ALERT_COOLDOWN = int(os.getenv("ALERT_COOLDOWN", 3600))
@@ -75,16 +76,16 @@ class Config:
     SMTP_PORT = int(os.getenv("SMTP_PORT", 25))
     SMTP_EMAIL = os.getenv("SMTP_EMAIL")
     SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
-    
-    # LDAP Config
-    LDAP_HOST = os.environ.get('LDAP_HOST', 'ldap://localhost:389')
-    LDAP_USE_SSL = str(os.getenv("LDAP_USE_SSL", "False")).lower() == "true"
-    LDAP_BASE_DN = os.getenv("LDAP_BASE_DN")
-    LDAP_BIND_USER = os.getenv("LDAP_BIND_USER")
-    LDAP_BIND_PASSWORD = os.getenv("LDAP_BIND_PASSWORD")
-
-    LDAP_ADMIN_GROUP = os.getenv("LDAP_ADMIN_GROUP", "Admins")
-    LDAP_USER_GROUP = os.getenv("LDAP_USER_GROUP", "user_monitorr")
 
     # Turnstile
     TURNSTILE_SECRET_KEY = os.getenv("TURNSTILE_SECRET_KEY")
+
+    OIDC_CLIENT_ID = os.getenv("OIDC_CLIENT_ID")
+    OIDC_CLIENT_SECRET = os.getenv("OIDC_CLIENT_SECRET")
+    OIDC_REDIRECT_URI = os.getenv("OIDC_REDIRECT_URI", "http://localhost:3000/auth/callback")
+    
+    OIDC_AUTH_URL = os.getenv("OIDC_AUTH_URL", "https://auth.localhost/application/o/authorize/")
+    OIDC_TOKEN_URL = os.getenv("OIDC_TOKEN_URL", "https://auth.localhost/application/o/token/")
+    OIDC_USERINFO_URL = os.getenv("OIDC_USERINFO_URL", "https://auth.localhost/application/o/userinfo/")
+    
+    OIDC_ADMIN_GROUP = os.getenv("OIDC_ADMIN_GROUP", "Admins")

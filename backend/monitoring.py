@@ -5,13 +5,13 @@ import requests
 from datetime import datetime, timedelta
 from config import Config
 from database import get_db_connection
-from alerts import check_alerts  # Import Baru
+from alerts import send_email_alert, check_cooldown, update_cooldown
 
 def get_network_metrics():
     """Mengambil data bandwidth dari Prometheus"""
     if not Config.PROMETHEUS_URL:
         return {}
-    
+
     metrics = {}
     try:
         # Query RX
@@ -34,14 +34,13 @@ def get_network_metrics():
                 if instance not in metrics: metrics[instance] = {'rx': 0, 'tx': 0}
                 metrics[instance]['tx'] += val / 1000 # Convert to Kbps
 
-    except Exception as e:
-        print(f"[!] Prometheus Error: {e}")
+    except Exception:
+        pass # Silent error untuk metrics
     
     return metrics
 
 def update_machines_status():
     conn = get_db_connection()
-    # Select * agar kolom notify_xxx terambil
     machines = conn.execute("SELECT * FROM machines").fetchall()
     prom_metrics = get_network_metrics()
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -49,6 +48,7 @@ def update_machines_status():
     for m in machines:
         mid, host = m['id'], m['host']
         use_snmp = m['use_snmp']
+        prev_online_status = m['online']
         
         # 1. PING CHECK
         is_online = False
@@ -79,24 +79,55 @@ def update_machines_status():
             conn.execute("UPDATE machines SET online=0, latency_ms=0, rx_rate=0, tx_rate=0, last_seen=? WHERE id=?", 
                          (timestamp, mid))
 
-        status_str = "ONLINE" if is_online else "OFFLINE"
         conn.execute("INSERT INTO history (machine_id, status, time, latency, rx, tx) VALUES (?, ?, ?, ?, ?, ?)", 
-                     (mid, status_str, timestamp, latency, rx, tx))
+                     (mid, "ONLINE" if is_online else "OFFLINE", timestamp, latency, rx, tx))
         
-        # 4. CEK NOTIFIKASI
-        check_alerts(m, is_online, rx, tx)
+        # 4. ALERTS
+        
+        # A. Node Down (State Change - Tidak butuh cooldown karena trigger by change)
+        if prev_online_status == 1 and not is_online:
+            msg = f"Node unreachable. Ping Timeout."
+            if m['notify_down']:
+                conn.execute("INSERT INTO app_alerts (machine_id, type, message, time) VALUES (?, ?, ?, ?)", 
+                             (mid, 'down', msg, timestamp))
+                
+            if m['notify_down'] and m['notify_email']:
+                send_email_alert(mid, 'down', msg)
 
-    # CLEANUP HISTORY LAMA
+        # B. High Traffic (Continuous Value - BUTUH Cooldown)
+        threshold_kbps = Config.BANDWIDTH_THRESHOLD / 1000 
+        if is_online and use_snmp and m['notify_traffic']:
+            if rx > threshold_kbps or tx > threshold_kbps:
+                # [FIX] Cek Cooldown untuk Dashboard Alert
+                # Kita gunakan key khusus 'traffic_db' agar tidak bentrok dengan key email
+                if check_cooldown(mid, 'traffic_db'):
+                    msg = f"Traffic Spike: RX {rx} Kbps / TX {tx} Kbps"
+                    
+                    # 1. Masukkan notifikasi ke DB
+                    conn.execute("INSERT INTO app_alerts (machine_id, type, message, time) VALUES (?, ?, ?, ?)", 
+                                 (mid, 'traffic', msg, timestamp))
+                    
+                    # 2. Update cooldown DB agar tidak insert lagi dalam waktu dekat
+                    update_cooldown(mid, 'traffic_db')
+                    
+                    # 3. Kirim Email (send_email_alert punya cooldown sendiri dengan key 'traffic')
+                    if m['notify_email']:
+                        send_email_alert(mid, 'traffic', msg)
+
+    # Cleanup Old History
     cutoff = (datetime.now() - timedelta(days=Config.RETENTION_DAYS)).strftime("%Y-%m-%d %H:%M:%S")
     conn.execute("DELETE FROM history WHERE time < ?", (cutoff,))
+    
     conn.commit()
     conn.close()
 
 def monitor_loop():
-    print("[*] Monitoring loop started...")
+    print("[*] Monitoring Service Started")
+    print(f"[*] Threshold: {Config.BANDWIDTH_THRESHOLD} bps | Recipient: {Config.ALERT_RECIPIENT}")
+    
     while True:
         try:
             update_machines_status()
         except Exception as e:
-            print(f"[!] Error in monitoring loop: {e}")
+            print(f"[!] Monitor Loop Error: {e}")
         time.sleep(Config.PING_INTERVAL)

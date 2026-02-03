@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Register - Monitorr Pro</title>
+
+		<link
+			href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+			rel="stylesheet"
+		/>
+		<link
+			href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+			rel="stylesheet"
+		/>
+		<script
+			src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+			async
+			defer
+		></script>
+
+		<style>
+			:root {
+				/* Tema Hijau untuk Register */
+				--primary: #10b981;
+				--primary-dark: #059669;
+				--text-main: #0f172a;
+				--text-sub: #64748b;
+				--border: #e2e8f0;
+			}
+
+			* {
+				box-sizing: border-box;
+			}
+
+			body {
+				margin: 0;
+				font-family: "Plus Jakarta Sans", sans-serif;
+				height: 100vh;
+				display: flex;
+				overflow: hidden;
+			}
+
+			/* LEFT SIDE */
+			.split-left {
+				flex: 1;
+				background-color: var(--primary);
+				/* Pola Dot Pattern */
+				background-image: radial-gradient(
+					rgba(255, 255, 255, 0.2) 1px,
+					transparent 1px
+				);
+				background-size: 20px 20px;
+				position: relative;
+				display: flex;
+				flex-direction: column;
+				justify-content: space-between;
+				padding: 3rem;
+				color: white;
+			}
+
+			.brand-large {
+				font-size: 1.5rem;
+				font-weight: 700;
+				display: flex;
+				align-items: center;
+				gap: 10px;
+			}
+			.quote {
+				font-size: 2rem;
+				font-weight: 700;
+				line-height: 1.2;
+				margin-bottom: 1rem;
+			}
+
+			/* RIGHT SIDE */
+			.split-right {
+				flex: 1;
+				background: #ffffff;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				padding: 2rem;
+			}
+
+			.form-container {
+				width: 100%;
+				max-width: 400px;
+			}
+
+			/* Sama seperti Login style */
+			.form-group {
+				margin-bottom: 1.25rem;
+			}
+			label {
+				display: block;
+				margin-bottom: 0.5rem;
+				font-weight: 600;
+				font-size: 0.9rem;
+				color: var(--text-main);
+			}
+
+			.input-wrapper {
+				position: relative;
+			}
+			.input-wrapper i {
+				position: absolute;
+				left: 16px;
+				top: 50%;
+				transform: translateY(-50%);
+				color: #94a3b8;
+				pointer-events: none;
+			}
+
+			input,
+			select {
+				width: 100%;
+				padding: 0.9rem 1rem 0.9rem 3rem;
+				border: 1.5px solid var(--border);
+				border-radius: 10px;
+				font-size: 1rem;
+				font-family: inherit;
+				background: white;
+				appearance: none;
+			}
+			input:focus,
+			select:focus {
+				outline: none;
+				border-color: var(--primary);
+				box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.1);
+			}
+
+			/* Admin Secret Logic */
+			#adminSecretField {
+				display: none;
+				background: #ecfdf5;
+				padding: 1rem;
+				border-radius: 10px;
+				border: 1px dashed var(--primary);
+				animation: fadeIn 0.3s ease;
+			}
+			@keyframes fadeIn {
+				from {
+					opacity: 0;
+					transform: translateY(-5px);
+				}
+				to {
+					opacity: 1;
+					transform: translateY(0);
+				}
+			}
+
+			button {
+				width: 100%;
+				padding: 1rem;
+				background: var(--primary);
+				color: white;
+				border: none;
+				border-radius: 10px;
+				font-weight: 600;
+				font-size: 1rem;
+				cursor: pointer;
+				margin-top: 1rem;
+				transition: background 0.2s;
+			}
+			button:hover {
+				background: var(--primary-dark);
+			}
+
+			.captcha-container {
+				margin-top: 1.5rem;
+				display: flex;
+				justify-content: center;
+			}
+			.footer {
+				margin-top: 2rem;
+				text-align: center;
+				font-size: 0.9rem;
+				color: var(--text-sub);
+			}
+			.footer a {
+				color: var(--primary);
+				text-decoration: none;
+				font-weight: 600;
+			}
+			.error {
+				background: #fef2f2;
+				color: #991b1b;
+				padding: 12px;
+				border-radius: 8px;
+				font-size: 0.9rem;
+				margin-top: 1rem;
+				display: none;
+				text-align: center;
+			}
+
+			@media (max-width: 900px) {
+				.split-left {
+					display: none;
+				}
+			}
+		</style>
+	</head>
+	<body>
+		<div class="split-left">
+			<div class="brand-large">
+				<i class="fas fa-user-plus"></i> Monitorr Pro
+			</div>
+			<div>
+				<div class="quote">Join the network.</div>
+				<div style="opacity: 0.9; font-size: 1.1rem">
+					Start monitoring your assets in seconds.
+				</div>
+			</div>
+			<div style="font-size: 0.85rem; opacity: 0.6">
+				&copy; 2026 Monitorr Inc.
+			</div>
+		</div>
+
+		<div class="split-right">
+			<div class="form-container">
+				<div style="margin-bottom: 2rem">
+					<h2 style="font-size: 1.8rem; margin: 0; color: #0f172a">
+						Create Account
+					</h2>
+					<div style="color: #64748b">
+						It's free and takes less than a minute.
+					</div>
+				</div>
+
+				<form id="registerForm">
+					<div class="form-group">
+						<label>Username</label>
+						<div class="input-wrapper">
+							<input
+								type="text"
+								id="username"
+								placeholder="Choose a username"
+								required
+							/>
+							<i class="fas fa-user"></i>
+						</div>
+					</div>
+
+					<div class="form-group">
+						<label>Password</label>
+						<input
+							type="password"
+							name="password"
+							class="form-control"
+							placeholder="Minimum 8 characters"
+							required
+							minlength="8"
+						/>
+					</div>
+
+					<div class="form-group">
+						<label>Confirm Password</label>
+						<input
+							type="password"
+							name="confirm_password"
+							class="form-control"
+							placeholder="Re-type password"
+							required
+						/>
+					</div>
+
+					<button type="submit" class="btn btn-primary w-100 mt-2">
+						Complete Registration <i class="fas fa-arrow-right"></i>
+					</button>
+
+					<div class="form-group">
+						<label>Role</label>
+						<div class="input-wrapper">
+							<select id="role" onchange="toggleSecret()">
+								<option value="user">User (View Only)</option>
+								<option value="admin">Admin (Full Access)</option>
+							</select>
+							<i class="fas fa-shield-alt"></i>
+						</div>
+					</div>
+
+					<div class="form-group" id="adminSecretField">
+						<label style="color: var(--primary-dark)">Admin Secret Key</label>
+						<div class="input-wrapper">
+							<input
+								type="password"
+								id="adminSecret"
+								placeholder="Enter secret code..."
+							/>
+							<i class="fas fa-key" style="color: var(--primary)"></i>
+						</div>
+					</div>
+
+					<div class="captcha-container">
+						<div
+							class="cf-turnstile"
+							data-sitekey="0x4AAAAAACS8-Z3nEddcM630"
+							data-theme="light"
+						></div>
+					</div>
+
+					<button type="submit">Create Account</button>
+					<div id="msg" class="error"></div>
+				</form>
+
+				<div class="footer">
+					Already have an account? <a href="/login">Log in</a>
+				</div>
+			</div>
+		</div>
+
+		<script>
+			function toggleSecret() {
+				const role = document.getElementById("role").value;
+				const field = document.getElementById("adminSecretField");
+				field.style.display = role === "admin" ? "block" : "none";
+				if (role !== "admin") document.getElementById("adminSecret").value = "";
+			}
+
+			document
+				.getElementById("registerForm")
+				.addEventListener("submit", async (e) => {
+					e.preventDefault();
+					const u = document.getElementById("username").value;
+					const p = document.getElementById("password").value;
+					const r = document.getElementById("role").value;
+					const s = document.getElementById("adminSecret").value;
+					const formData = new FormData(e.target);
+					const token = formData.get("cf-turnstile-response");
+					const btn = e.target.querySelector("button");
+					const msg = document.getElementById("msg");
+
+					if (!token) {
+						msg.textContent = "Please complete the CAPTCHA check.";
+						msg.style.display = "block";
+						return;
+					}
+
+					btn.disabled = true;
+					btn.innerHTML =
+						'<i class="fas fa-circle-notch fa-spin"></i> Creating...';
+					msg.style.display = "none";
+
+					try {
+						const res = await fetch("/auth/register", {
+							method: "POST",
+							headers: { "Content-Type": "application/json" },
+							body: JSON.stringify({
+								username: u,
+								password: p,
+								role: r,
+								adminSecret: s,
+								turnstileToken: token,
+							}),
+						});
+						const data = await res.json();
+						if (data.success) {
+							btn.innerHTML = '<i class="fas fa-check"></i> Success!';
+							setTimeout(() => {
+								alert("Account created!");
+								window.location.href = "/login";
+							}, 500);
+						} else {
+							throw new Error(data.message || "Registration failed");
+						}
+					} catch (e) {
+						msg.textContent = e.message;
+						msg.style.display = "block";
+						btn.disabled = false;
+						btn.innerText = "Create Account";
+						if (window.turnstile) turnstile.reset();
+					}
+				});
+		</script>
+	</body>
+</html>

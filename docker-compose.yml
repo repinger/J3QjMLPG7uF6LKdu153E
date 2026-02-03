@@ -1,0 +1,228 @@
+---
+name: Auth Service
+
+services:
+  postgresql:
+    container_name: postgresql
+    hostname: postgresql
+    networks:
+      - project-1
+    environment:
+      POSTGRES_DB: ${PG_DB:-authentik}
+      POSTGRES_PASSWORD: ${PG_PASS:?database password required}
+      POSTGRES_USER: ${PG_USER:-authentik}
+    healthcheck:
+      interval: 30s
+      retries: 5
+      start_period: 20s
+      test:
+      - CMD-SHELL
+      - pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}
+      timeout: 5s
+    image: docker.io/library/postgres:16-alpine
+    volumes:
+    - database:/var/lib/postgresql/data
+
+  authentik-server:
+    container_name: authentik-server
+    hostname: authentik-server
+    command: server
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      authentik-worker:
+        condition: service_started
+    environment:
+      AUTHENTIK_POSTGRESQL__HOST: postgresql
+      AUTHENTIK_POSTGRESQL__NAME: ${PG_DB:-authentik}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${PG_PASS}
+      AUTHENTIK_POSTGRESQL__USER: ${PG_USER:-authentik}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?secret key required}
+    image: ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server}:${AUTHENTIK_TAG:-2025.12.2}
+    networks:
+      project-1:
+        ipv4_address: 172.23.11.100
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.authentik.rule=Host(`auth.localhost`)
+      - traefik.http.routers.authentik.entrypoints=web
+      - traefik.http.services.authentik.loadbalancer.server.port=9000
+      - traefik.http.routers.authentik.service=authentik
+    volumes:
+      - data:/data
+      - custom-templates:/templates
+  
+  authentik-worker:
+    container_name: authentik-worker
+    hostname: authentik-worker
+    command: worker
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    environment:
+      AUTHENTIK_POSTGRESQL__HOST: postgresql
+      AUTHENTIK_POSTGRESQL__NAME: ${PG_DB:-authentik}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${PG_PASS}
+      AUTHENTIK_POSTGRESQL__USER: ${PG_USER:-authentik}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?secret key required}
+    image: ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server}:${AUTHENTIK_TAG:-2025.12.2}
+    user: root
+    networks:
+      - project-1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - data:/data
+      - certs:/certs
+      - custom-templates:/templates
+  
+  snmp-exporter:
+    container_name: snmp-exporter
+    hostname: snmp-exporter
+    image: prom/snmp-exporter:latest
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.snmp.rule=Host(`snmp.localhost`)
+      - traefik.http.routers.snmp.entrypoints=web
+      - traefik.http.services.snmp.loadbalancer.server.port=9116
+      - traefik.http.routers.snmp.service=snmp
+    volumes:
+      - ./configs/prom/snmp.yml:/etc/snmp_exporter/snmp.yml:ro
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - project-1
+
+  prometheus:
+    container_name: prometheus
+    hostname: prometheus
+    image: prom/prometheus:latest
+    depends_on:
+      - snmp-exporter
+    volumes:
+      - ./configs/prom/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - /etc/localtime:/etc/localtime:ro
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.prom.rule=Host(`prom.localhost`)
+      - traefik.http.routers.prom.entrypoints=web
+      - traefik.http.services.prom.loadbalancer.server.port=9090
+      - traefik.http.routers.prom.service=prom
+    networks:
+      - project-1
+
+  email:
+    container_name: email
+    hostname: email
+    image: stalwartlabs/stalwart:latest-alpine
+    volumes:
+      - email:/opt/stalwart
+      - /etc/localtime:/etc/localtime:ro
+    ports:
+      - 127.0.0.1:25:25
+      - 127.0.0.1:143:143
+    networks:
+      - project-1
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.email.rule=Host(`mail.localhost`)
+      - traefik.http.routers.email.entrypoints=web
+      - traefik.http.services.email.loadbalancer.server.port=8080
+      - traefik.http.routers.email.service=email
+
+  traefik:
+    container_name: traefik
+    hostname: traefik
+    image: traefik:latest
+    command:
+      - --api.insecure=true
+      - --providers.docker=true
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+    networks:
+      - project-1
+    ports:
+      - 127.0.0.1:80:80
+      - "[::1]:80:80"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  app-web:
+    container_name: app-web
+    hostname: app-web
+    depends_on:
+      - app-pinger
+    build:
+      context: ./app
+    networks:
+      - project-1
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.app.rule=Host(`app.localhost`)
+      - traefik.http.routers.app.entrypoints=web
+      - traefik.http.services.app.loadbalancer.server.port=3000
+      - traefik.http.routers.app.service=app
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./.env:/app/.env:ro
+
+  app-pinger:
+    container_name: app-pinger
+    hostname: app-pinger
+    depends_on:
+      - prometheus
+      - email
+    build:
+      context: ./backend
+    environment:
+      PYTHONUNBUFFERED: 1
+      PYTHONIOENCODING: UTF-8
+    volumes:
+      - pinger:/db
+      - ./.env:/app/.env:ro
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - project-1
+
+  app-manager:
+    container_name: app-manager
+    hostname: app-manager
+    depends_on:
+      - email
+      - authentik-server
+      - authentik-worker
+    build:
+      context: ./manager
+    environment:
+      PYTHONUNBUFFERED: 1
+      PYTHONIOENCODING: UTF-8
+    networks:
+      - project-1
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.manager.rule=Host(`manager.localhost`)
+      - traefik.http.routers.apmanagerpmanager.entrypoints=web
+      - traefik.http.services.manager.loadbalancer.server.port=5001
+      - traefik.http.routers.manager.service=manager
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./.env:/app/.env:ro
+      - manager:/db
+
+volumes:
+  pinger:
+  email:
+  data:
+  certs:
+  custom-templates:
+  database:
+  manager:
+  
+networks:
+  project-1:
+    driver_opts:
+      com.docker.network.bridge.name: project-1
+    enable_ipv6: true
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.23.11.0/24

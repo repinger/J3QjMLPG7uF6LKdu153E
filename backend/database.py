@@ -2,12 +2,14 @@ import sqlite3
 from config import Config
 
 def get_db_connection():
-    conn = sqlite3.connect(Config.DB_FILE, check_same_thread=False)
+    conn = sqlite3.connect(Config.DB_FILE, check_same_thread=False, timeout=30)
+    
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL") 
+    
     return conn
 
 def add_column_if_not_exists(cursor, table, column, col_type):
-    """Fungsi aman untuk migrasi database tanpa menghapus data"""
     try:
         cursor.execute(f"SELECT {column} FROM {table} LIMIT 1")
     except sqlite3.OperationalError:
@@ -18,7 +20,7 @@ def init_db():
     conn = get_db_connection()
     c = conn.cursor()
 
-    # 1. Buat Tabel Utama jika belum ada
+    # 1. Tabel Machines
     c.execute('''
         CREATE TABLE IF NOT EXISTS machines (
             id TEXT PRIMARY KEY,
@@ -35,13 +37,18 @@ def init_db():
             last_seen TEXT DEFAULT 'Never'
         )
     ''')
+    try:
+        c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_machines_host ON machines(host)")
+    except Exception as e:
+        print(f"[!] Index creation warning: {e}")
 
-    # 2. Migrasi: Tambahkan kolom notifikasi satu per satu (Safety Check)
     add_column_if_not_exists(c, "machines", "notify_down", "BOOLEAN DEFAULT 1")
     add_column_if_not_exists(c, "machines", "notify_traffic", "BOOLEAN DEFAULT 1")
     add_column_if_not_exists(c, "machines", "notify_email", "BOOLEAN DEFAULT 0")
+    add_column_if_not_exists(c, "machines", "city", "TEXT DEFAULT ''")
+    add_column_if_not_exists(c, "machines", "province", "TEXT DEFAULT ''")
 
-    # 3. Tabel History
+    # 2. Tabel History & Alerts (Sama seperti sebelumnya)
     c.execute('''
         CREATE TABLE IF NOT EXISTS history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -54,8 +61,6 @@ def init_db():
             FOREIGN KEY(machine_id) REFERENCES machines(id) ON DELETE CASCADE
         )
     ''')
-
-    # 4. Tabel App Alerts
     c.execute('''
         CREATE TABLE IF NOT EXISTS app_alerts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -67,6 +72,21 @@ def init_db():
             FOREIGN KEY(machine_id) REFERENCES machines(id) ON DELETE CASCADE
         )
     ''')
+
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+    ''')
+
+    # Seed Default Settings jika belum ada
+    default_settings = [
+        ('latency_threshold', '100'),      # ms
+        ('bandwidth_threshold', '10000')   # Kbps (10 Mbps)
+    ]
+    for key, val in default_settings:
+        c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, val))
 
     conn.commit()
     conn.close()
