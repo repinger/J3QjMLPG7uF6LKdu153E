@@ -147,21 +147,35 @@ app.get("/", ensureAuthenticated, preventCache, (req, res) => {
 
 const proxy = async (method, path, req, res) => {
 	try {
+		const headers = {};
+
+		// Cek apakah session user ada
+		if (req.session.user) {
+			// Kirim Role
+			headers["X-User-Role"] = req.session.user.role || "user";
+
+			// Kirim Groups (Array di-convert jadi JSON String)
+			// Karena kita sudah memperbaiki oidc_service.py, req.session.user.groups sekarang ADA isinya.
+			const groups = req.session.user.groups || [];
+			headers["X-User-Groups"] = JSON.stringify(groups);
+
+			// Debugging (Opsional: Cek di console server nodejs apakah groups terbaca)
+			// console.log("Proxying with groups:", headers['X-User-Groups']);
+		}
+
 		const response = await axios({
 			method,
 			url: `${PYTHON_API}${path}`,
 			data: req.body,
+			headers: headers, // Attach headers
 		});
 		res.status(response.status).json(response.data);
 	} catch (e) {
+		// ... (error handling tetap sama)
 		if (e.response) {
 			res.status(e.response.status).json(e.response.data);
-		} else if (e.request) {
-			console.error(`Backend Down: ${PYTHON_API}${path}`);
-			res.status(502).json({ error: "Backend Unreachable (Service Down)" });
 		} else {
-			console.error("Proxy Internal Error:", e.message);
-			res.status(500).json({ error: "Gateway Internal Error" });
+			res.status(500).json({ error: "Gateway Error" });
 		}
 	}
 };

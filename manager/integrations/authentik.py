@@ -13,19 +13,42 @@ def get_groups():
     try:
         res = requests.get(f"{Config.AUTHENTIK_API_URL}/core/groups/?page_size=100", headers=get_headers())
         if res.status_code == 200:
-            return [{'pk': g['pk'], 'name': g['name'], 'is_superuser': g.get('is_superuser', False)} for g in res.json().get('results', [])]
+            results = res.json().get('results', [])
+            groups = []
+            for g in results:
+                # [LOGIK BARU] Ambil list parents atau konversi parent tunggal jadi list
+                parents_data = g.get('parents', [])
+                if not parents_data and g.get('parent'):
+                    parents_data = [g.get('parent')]
+                
+                groups.append({
+                    'pk': g['pk'], 
+                    'name': g['name'], 
+                    'is_superuser': g.get('is_superuser', False),
+                    'parents': parents_data # List of UUIDs
+                })
+            return groups
     except Exception as e:
         print(f"[!] Error fetching groups: {e}")
         pass
     return []
 
-def create_group(name):
+def create_group(name, parent_pks=None):
     url = f"{Config.AUTHENTIK_API_URL}/core/groups/"
-    return requests.post(url, json={"name": name, "is_superuser": False}, headers=get_headers())
+    payload = {
+        "name": name, 
+        "is_superuser": False,
+        "parents": parent_pks if parent_pks else []
+    }
+    return requests.post(url, json=payload, headers=get_headers())
 
-def update_group(pk, name):
+def update_group(pk, name, parent_pks=None):
     url = f"{Config.AUTHENTIK_API_URL}/core/groups/{pk}/"
-    return requests.patch(url, json={"name": name}, headers=get_headers())
+    payload = {
+        "name": name,
+        "parents": parent_pks if parent_pks else []
+    }
+    return requests.patch(url, json=payload, headers=get_headers())
 
 def delete_group(pk):
     return requests.delete(f"{Config.AUTHENTIK_API_URL}/core/groups/{pk}/", headers=get_headers())

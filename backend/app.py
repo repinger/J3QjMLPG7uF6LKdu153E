@@ -7,6 +7,7 @@ import threading
 import time
 import sqlite3
 import requests
+import json
 
 app = Flask(__name__)
 
@@ -258,11 +259,60 @@ def clear_alerts():
 @app.route('/api/status', methods=['GET'])
 def get_status():
     conn = get_db_connection()
+    
+    # 1. Ambil Context dari Header
+    user_role = request.headers.get('X-User-Role', 'user')
+    user_groups_str = request.headers.get('X-User-Groups', '[]')
+    
+    try:
+        user_groups = json.loads(user_groups_str)
+    except:
+        user_groups = []
+
+    # 2. Query Data Machines
     machines = conn.execute("SELECT * FROM machines").fetchall()
     
+    # 3. Filtering Logic
+    filtered_machines = []
+    
+    if user_role == 'admin':
+        # Admin melihat semua
+        filtered_machines = machines
+    else:
+        # User Biasa: Cek Province Rules
+        if not user_groups:
+            # Jika user tidak punya group, atau header gagal terkirim -> Tidak lihat apa-apa
+            allowed_provinces = []
+            print("[DEBUG] User has no groups, viewing nothing.")
+        else:
+            # Cari provinsi yang boleh dilihat oleh group user ini
+            # Menggunakan parameter binding untuk keamanan (mencegah SQL Injection via header)
+            placeholders = ','.join(['?'] * len(user_groups))
+            
+            # Kita cek berdasarkan group_pk ATAU group_name (untuk fleksibilitas)
+            query = f"""
+                SELECT DISTINCT province 
+                FROM province_rules 
+                WHERE group_pk IN ({placeholders}) 
+                   OR group_name IN ({placeholders})
+            """
+            # Parameter dikirim dua kali karena ada dua klausa IN
+            params = user_groups + user_groups
+            
+            rules = conn.execute(query, params).fetchall()
+            allowed_provinces = [r['province'] for r in rules]
+            print(f"[DEBUG] User Groups: {user_groups} -> Allowed: {allowed_provinces}")
+
+        # Filter array machines
+        for m in machines:
+            if m['province'] in allowed_provinces:
+                filtered_machines.append(m)
+
+    # 4. Format Output & History
     result = []
-    for m in machines:
+    for m in filtered_machines:
         m_dict = dict(m)
+        # Ambil history hanya untuk machine yang lolos filter
         history = conn.execute("SELECT time, status, latency, rx, tx FROM history WHERE machine_id=? ORDER BY id DESC LIMIT 60", (m['id'],)).fetchall()
         m_dict['history'] = [dict(h) for h in reversed(history)]
         result.append(m_dict)

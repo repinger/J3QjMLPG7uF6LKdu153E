@@ -313,7 +313,11 @@ def edit_user(pk):
 @bp.route('/group/create', methods=['POST'])
 @login_required
 def group_create():
-    res = authentik.create_group(request.form.get('name'))
+    name = request.form.get('name')
+    parent_pks = request.form.getlist('parents') # [BARU] Ambil list input parents
+    
+    res = authentik.create_group(name, parent_pks)
+    
     if res.status_code == 201: flash("Group created.", "success")
     else: flash(f"Error: {res.text}", "danger")
     return redirect(url_for('routes.dashboard'))
@@ -330,11 +334,14 @@ def group_delete(pk):
 @login_required
 def group_edit(pk):
     name = request.form.get('name')
+    parent_pks = request.form.getlist('parents') # [BARU] Ambil list input parents
+    
     if not name:
         flash("Group name is required.", "danger")
         return redirect(url_for('routes.dashboard'))
     
-    res = authentik.update_group(pk, name)
+    res = authentik.update_group(pk, name, parent_pks)
+    
     if res.status_code == 200:
         flash(f"Group updated to '{name}'.", "success")
     else:

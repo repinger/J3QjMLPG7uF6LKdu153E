@@ -53,7 +53,8 @@ def authenticate_oidc(authorization_code):
         return {
             "username": username,
             "role": role,
-            "email": email
+            "email": email,
+            "groups": groups
         }
 
     except Exception as e:

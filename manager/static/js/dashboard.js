@@ -26,14 +26,40 @@ function openModal(modalId) {
 	document.getElementById(modalId).style.display = "flex";
 }
 
-// Edit Group Handler
-function openEditGroup(pk, name) {
+function openEditGroup(pk, name, parentPks) {
 	const form = document.getElementById("form-edit-group");
 	const inputName = document.getElementById("edit-group-name");
+	const selectParents = document.getElementById("edit-group-parents"); // [BARU]
 
 	if (form && inputName) {
 		form.action = "/group/edit/" + pk;
 		inputName.value = name;
+
+		// [LOGIK BARU] Handle Multiple Selection
+		if (selectParents) {
+			// 1. Reset selection
+			for (let i = 0; i < selectParents.options.length; i++) {
+				selectParents.options[i].selected = false;
+				selectParents.options[i].disabled = false; // Reset disabled status
+			}
+
+			// 2. Disable opsi "Diri Sendiri" agar tidak loop
+			for (let i = 0; i < selectParents.options.length; i++) {
+				if (selectParents.options[i].value === pk) {
+					selectParents.options[i].disabled = true;
+				}
+			}
+
+			// 3. Select parents yang sudah ada
+			if (parentPks && Array.isArray(parentPks)) {
+				for (let i = 0; i < selectParents.options.length; i++) {
+					if (parentPks.includes(selectParents.options[i].value)) {
+						selectParents.options[i].selected = true;
+					}
+				}
+			}
+		}
+
 		openModal("modal-edit-group");
 	}
 }
