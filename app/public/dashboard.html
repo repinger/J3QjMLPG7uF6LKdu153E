@@ -66,6 +66,43 @@
 				border: 1px solid #e2e8f0;
 				color: #4f46e5; /* Icon Primary Color */
 			}
+			/* Styling khusus untuk Modal Geo */
+			.geo-list-container {
+				max-height: 200px;
+				overflow-y: auto;
+				border: 1px solid #e2e8f0;
+				border-radius: 6px;
+				padding: 10px;
+				background: #f8fafc;
+			}
+			.geo-rule-item {
+				background: white;
+				border: 1px solid #e2e8f0;
+				padding: 8px 12px;
+				border-radius: 6px;
+				margin-bottom: 8px;
+				font-size: 0.9rem;
+			}
+			.geo-rule-header {
+				font-weight: 700;
+				color: #334155;
+				display: flex;
+				justify-content: space-between;
+			}
+			.geo-rule-badges {
+				margin-top: 5px;
+				display: flex;
+				flex-wrap: wrap;
+				gap: 4px;
+			}
+			.badge-prov {
+				background: #eff6ff;
+				color: #2563eb;
+				border: 1px solid #bfdbfe;
+				padding: 2px 8px;
+				border-radius: 99px;
+				font-size: 0.75rem;
+			}
 		</style>
 	</head>
 	<body class="auth-pending">
@@ -298,14 +335,20 @@
 								</select>
 							</div>
 
-							<div class="filter-group">
+							<div class="filter-group" id="settingsBar" style="display: none">
 								<h4>Pengaturan</h4>
 								<button
 									onclick="openSettingsModal()"
 									class="btn-secondary w-full"
+									style="margin-bottom: 8px"
 								>
 									<i class="fas fa-cog"></i> Config Threshold
 								</button>
+								<div>
+									<button onclick="openGeoModal()" class="btn-secondary w-full">
+										<i class="fas fa-globe-asia"></i> Akses Provinsi
+									</button>
+								</div>
 							</div>
 						</aside>
 
@@ -735,6 +778,55 @@
 						>
 							Simpan
 						</button>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<div id="geoModal" class="modal">
+			<div class="modal-content">
+				<div class="modal-header">
+					<h3>Atur Akses Provinsi</h3>
+					<span class="close-btn" onclick="closeModal('geoModal')"
+						>&times;</span
+					>
+				</div>
+				<div class="form-group">
+					<label>Pilih Group Authentik</label>
+					<select
+						id="geoGroupSelect"
+						class="sidebar-select"
+						style="width: 100%"
+					>
+						<option value="">Memuat Groups...</option>
+					</select>
+				</div>
+
+				<div class="form-group">
+					<label>Izinkan Provinsi (Pilih Banyak)</label>
+					<div id="geoProvinceList" class="geo-list-container">
+						<div style="text-align: center; color: #64748b; padding: 10px">
+							Memuat Provinsi...
+						</div>
+					</div>
+				</div>
+
+				<button
+					class="btn-primary"
+					onclick="saveGeoRule()"
+					style="width: 100%; margin-bottom: 20px"
+				>
+					Simpan Rule
+				</button>
+
+				<hr
+					style="border: 0; border-top: 1px solid #e2e8f0; margin-bottom: 15px"
+				/>
+
+				<h4 style="margin-bottom: 10px; color: #334155">Aturan Tersimpan</h4>
+				<div id="geoRulesTable" style="max-height: 250px; overflow-y: auto">
+					<div style="text-align: center; color: #94a3b8">
+						Belum ada aturan.
 					</div>
 				</div>
 			</div>

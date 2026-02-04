@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify
 from config import Config
 from utils import login_required
 from database import get_db
@@ -430,3 +430,12 @@ def app_delete(pk):
         flash(f"Failed to delete application. API Response: {res.status_code} {res.text}", "danger")
         
     return redirect(url_for('routes.dashboard'))
+
+@bp.route('/api/groups', methods=['GET'])
+def api_get_groups():
+    """
+    Endpoint internal untuk memberikan daftar grup Authentik ke Backend App.
+    """
+    # Menggunakan fungsi existing dari integrasi authentik
+    groups = authentik.get_groups()
+    return jsonify(groups)

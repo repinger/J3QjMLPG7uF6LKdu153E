@@ -80,6 +80,17 @@ def init_db():
         )
     ''')
 
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS province_rules (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_pk TEXT NOT NULL,
+            group_name TEXT,
+            province TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(group_pk, province)
+        )
+    ''')
+
     # Seed Default Settings jika belum ada
     default_settings = [
         ('latency_threshold', '100'),      # ms

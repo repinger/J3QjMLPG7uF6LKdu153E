@@ -14,13 +14,17 @@ L.tileLayer(
 	"https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
 	{ attribution: "&copy; OpenStreetMap" },
 ).addTo(map);
+
+// Layer untuk Garis Koneksi (Supaya di bawah marker)
+const connectionLinesLayer = L.layerGroup().addTo(map);
+
+// Cluster Group untuk Node biasa
 const markersLayer = L.markerClusterGroup({
-	disableClusteringAtZoom: 15, // Naikkan threshold zoom untuk clustering
+	disableClusteringAtZoom: 15,
 	spiderfyOnMaxZoom: true,
 	showCoverageOnHover: false,
-	maxClusterRadius: 60, // Kurangi radius cluster
+	maxClusterRadius: 60,
 	spiderfyDistanceMultiplier: 1.5,
-	// Tambahkan chunked loading untuk performa
 	chunkedLoading: true,
 	chunkDelay: 100,
 }).addTo(map);
@@ -42,6 +46,10 @@ let currentViewMode = "normal";
 let configLatency = 100; // Default
 let configBandwidth = 10000; // Default
 
+// [BARU] Variable untuk HQ (Server Pusat)
+let hqLocation = null; // { lat, lng, city, ip, org }
+let hqMarker = null;
+
 // --- AUTH CHECK & ROLE SETUP ---
 async function fetchUserInfo() {
 	try {
@@ -50,33 +58,34 @@ async function fetchUserInfo() {
 			const user = await res.json();
 			currentUserRole = user.role;
 
-			// [FIX] Update Tampilan User & Role
 			const nameEl = document.getElementById("nav-username");
 			const roleEl = document.getElementById("nav-role");
 
 			if (nameEl) nameEl.textContent = user.username || "User";
 			if (roleEl) roleEl.textContent = user.role || "Member";
 
-			// LOGIKA GANTI NAMA MENU & JUDUL
 			const navListBtn = document.getElementById("nav-list");
 			const pageTitle = document.querySelector("#view-list h2");
 			const pageSubtitle = document.querySelector("#view-list .subtitle");
 
+			// Tombol di Sidebar
+			const adminWrapper = document.getElementById("settingsBar");
+
 			if (currentUserRole === "admin") {
-				// Tampilan ADMIN
 				if (navListBtn)
 					navListBtn.innerHTML = '<i class="fas fa-server"></i> Manage Nodes';
 				if (pageTitle) pageTitle.textContent = "Manage Nodes";
 				if (pageSubtitle)
 					pageSubtitle.textContent = "Monitoring & Control Center";
 
-				// Highlight Role Admin
 				if (roleEl) {
-					roleEl.style.color = "#f59e0b"; // Warna Orange/Emas untuk admin
+					roleEl.style.color = "#f59e0b";
 					roleEl.innerHTML = '<i class="fas fa-shield-alt"></i> ADMIN';
 				}
+
+				// Tampilkan tombol Geo Restriction
+				if (adminWrapper) adminWrapper.style.display = "block";
 			} else {
-				// Tampilan USER BIASA
 				if (navListBtn)
 					navListBtn.innerHTML =
 						'<i class="fas fa-network-wired"></i> View Nodes';
@@ -98,6 +107,101 @@ async function fetchUserInfo() {
 	}
 }
 fetchUserInfo();
+
+// --- [BARU] LOAD HQ LOCATION ---
+async function loadHQLocation() {
+	try {
+		const res = await fetch("/api/hq");
+		if (res.ok) {
+			const data = await res.json();
+			if (data.lat && data.lng) {
+				hqLocation = data;
+				// Render HQ Marker Langsung
+				renderHQMarker();
+				// Jika data machine sudah ada, gambar garisnya sekarang
+				if (currentMachines.length > 0) {
+					drawConnectionLines(currentMachines);
+				}
+			}
+		}
+	} catch (e) {
+		console.error("Gagal memuat lokasi HQ", e);
+	}
+}
+loadHQLocation();
+
+function renderHQMarker() {
+	if (!hqLocation) return;
+	if (hqMarker) map.removeLayer(hqMarker);
+
+	// Ikon Server Pusat (Beda warna/style)
+	const iconHtml = `
+        <div class="marker-wrapper">
+            <div class="pulse-ring" style="background: #4f46e5; animation: pulsate 2s infinite;"></div>
+            <div class="marker-icon" style="background: #4f46e5; border-color: #fff;">
+                <i class="fas fa-building"></i>
+            </div>
+            <div class="marker-name" style="background: #312e81; color: white;">SERVER PUSAT</div>
+        </div>`;
+
+	const icon = L.divIcon({
+		className: "custom-marker",
+		html: iconHtml,
+		iconSize: [44, 44],
+		iconAnchor: [22, 22],
+		popupAnchor: [0, -26],
+	});
+
+	const orgInfo = hqLocation.org
+		? `<br><span style="font-size:0.75rem; color:#64748b;">${hqLocation.org}</span>`
+		: "";
+
+	const popupHtml = `
+        <div style="text-align: center; font-family: 'Plus Jakarta Sans', sans-serif; padding: 5px;">
+            <div style="font-weight: 800; color: #312e81; font-size: 1rem; margin-bottom: 5px;">SERVER MONITORING</div>
+            <div style="font-size: 0.85rem; color: #475569;">
+                <i class="fas fa-map-marker-alt"></i> ${hqLocation.city || "Unknown"}<br>
+                <i class="fas fa-network-wired"></i> ${hqLocation.ip || "Unknown"}
+                ${orgInfo}
+            </div>
+        </div>
+    `;
+
+	hqMarker = L.marker([hqLocation.lat, hqLocation.lng], {
+		icon: icon,
+		zIndexOffset: 1000, // Supaya selalu di atas marker lain
+	})
+		.bindPopup(popupHtml)
+		.addTo(map);
+}
+
+function drawConnectionLines(data) {
+	connectionLinesLayer.clearLayers();
+	if (!hqLocation || !hqLocation.lat || !hqLocation.lng) return;
+
+	data.forEach((m) => {
+		if (m.lat && m.lng) {
+			// Tentukan warna garis: Abu-abu jika online, Merah tipis jika offline
+			const lineColor = m.online ? "#94a3b8" : "#fecaca"; // Slate-400 vs Red-200
+			const lineDash = m.online ? null : "5, 5"; // Putus-putus jika offline
+			const lineOpacity = m.online ? 0.6 : 0.8; // Sedikit lebih opaque
+
+			L.polyline(
+				[
+					[hqLocation.lat, hqLocation.lng],
+					[m.lat, m.lng],
+				],
+				{
+					color: lineColor,
+					weight: 3, // [UBAH] Lebih tebal (sebelumnya 1.5)
+					opacity: lineOpacity,
+					dashArray: lineDash,
+					smoothFactor: 1,
+				},
+			).addTo(connectionLinesLayer);
+		}
+	});
+}
 
 // --- NOTIFICATIONS ---
 window.toggleNotifications = function () {
@@ -137,13 +241,10 @@ window.markRead = async function () {
 };
 
 window.clearNotifications = async function () {
-	// Konfirmasi agar tidak terhapus tidak sengaja
 	if (!confirm("Hapus semua riwayat notifikasi?")) return;
-
 	try {
 		const res = await fetch("/api/alerts/clear", { method: "POST" });
 		if (res.ok) {
-			// Refresh list notifikasi (akan menjadi kosong)
 			fetchNotifications();
 			showToast("Notifikasi dihapus", "success");
 		} else {
@@ -228,6 +329,11 @@ window.changeDensity = function (val) {
 	else if (itemsPerPage === 6) currentViewMode = "normal";
 	else if (itemsPerPage <= 12) currentViewMode = "compact";
 	else currentViewMode = "minimal";
+
+	const container = document.getElementById("cards-container");
+	if (container) container.innerHTML = "";
+	listChartInstances = {};
+
 	renderList(currentMachines);
 };
 
@@ -276,7 +382,6 @@ map.on("popupclose", function () {
 
 async function loadStatus() {
 	try {
-		// [BARU] Load Settings dulu agar filter valid
 		await loadSettings();
 
 		const res = await fetch("/api/status");
@@ -286,7 +391,6 @@ async function loadStatus() {
 
 		if (!Array.isArray(data)) return;
 
-		// Sorting (Provinsi -> Kota -> ID)
 		data.sort((a, b) => {
 			const provA = a.province || "zzz";
 			const provB = b.province || "zzz";
@@ -302,7 +406,6 @@ async function loadStatus() {
 		applyFilters(false);
 		renderMap(data);
 
-		// Update detail chart if open
 		if (openedPopupId) {
 			const m = currentMachines.find((x) => x.id === openedPopupId);
 			if (m && mapChartInstances[openedPopupId]) updateMapChart(m);
@@ -312,7 +415,6 @@ async function loadStatus() {
 	}
 }
 
-// [BARU] Load Settings API
 async function loadSettings() {
 	try {
 		const res = await fetch("/api/settings");
@@ -326,8 +428,15 @@ async function loadSettings() {
 	}
 }
 
-// [BARU] Save Settings API
 window.openSettingsModal = function () {
+	if (currentUserRole !== "admin") {
+		showToast(
+			"Akses Ditolak: Hanya Admin yang boleh mengatur konfigurasi.",
+			"error",
+		);
+		return;
+	}
+	
 	document.getElementById("confLatency").value = configLatency;
 	document.getElementById("confBandwidth").value = configBandwidth;
 	document.getElementById("settingsModal").style.display = "flex";
@@ -352,7 +461,7 @@ window.saveSettings = async function () {
 			configBandwidth = newBw;
 			closeModal("settingsModal");
 			showToast("Konfigurasi tersimpan!", "success");
-			applyFilters(); // Re-apply filter dengan nilai baru
+			applyFilters();
 		} else {
 			showToast("Gagal menyimpan", "error");
 		}
@@ -361,17 +470,193 @@ window.saveSettings = async function () {
 	}
 };
 
+// --- [BARU] GEO RESTRICTION LOGIC ---
+
+window.openGeoModal = function () {
+	document.getElementById("geoModal").style.display = "flex";
+	loadGeoData();
+};
+
+async function loadGeoData() {
+	// Reset UI
+	document.getElementById("geoGroupSelect").innerHTML =
+		'<option value="">Memuat...</option>';
+	document.getElementById("geoProvinceList").innerHTML =
+		'<div style="text-align:center; padding:10px;">Memuat...</div>';
+	document.getElementById("geoRulesTable").innerHTML =
+		'<div style="text-align:center;">Memuat...</div>';
+
+	try {
+		// 1. Fetch Groups (dari Authentik via Manager)
+		const resGroups = await fetch("/api/admin/authentik-groups");
+		const groups = await resGroups.json();
+
+		// 2. Fetch Available Provinces (dari data Node)
+		const resProvs = await fetch("/api/admin/provinces");
+		const provinces = await resProvs.json();
+
+		// 3. Fetch Existing Rules (dari DB Backend)
+		const resRules = await fetch("/api/admin/province-rules");
+		const rules = await resRules.json();
+
+		renderGeoModal(groups, provinces, rules);
+	} catch (e) {
+		console.error("Geo Data Error:", e);
+		showToast("Gagal memuat data", "error");
+	}
+}
+
+function renderGeoModal(groups, provinces, rules) {
+	// --- RENDER SELECT GROUP ---
+	const groupSelect = document.getElementById("geoGroupSelect");
+	groupSelect.innerHTML = '<option value="">-- Pilih Group --</option>';
+
+	// Filter group sistem bawaan Authentik yang tidak perlu diatur
+	const filteredGroups = groups.filter((g) => !g.name.startsWith("authentik "));
+
+	filteredGroups.forEach((g) => {
+		const opt = document.createElement("option");
+		opt.value = g.pk;
+		opt.textContent = g.name;
+		opt.dataset.name = g.name; // Simpan nama untuk keperluan display nanti
+		groupSelect.appendChild(opt);
+	});
+
+	// --- RENDER PROVINCES CHECKBOX ---
+	const provList = document.getElementById("geoProvinceList");
+	provList.innerHTML = "";
+	if (provinces.length === 0) {
+		provList.innerHTML =
+			'<div style="color:#94a3b8; text-align:center;">Belum ada data provinsi dari Node.</div>';
+	} else {
+		provinces.forEach((p) => {
+			if (!p) return;
+			const label = document.createElement("label");
+			label.style.display = "flex";
+			label.style.alignItems = "center";
+			label.style.gap = "8px";
+			label.style.padding = "4px 0";
+			label.style.cursor = "pointer";
+
+			label.innerHTML = `
+				<input type="checkbox" class="geo-prov-cb" value="${p}">
+				<span style="color: #334155;">${p}</span>
+			`;
+			provList.appendChild(label);
+		});
+	}
+
+	// --- RENDER EXISTING RULES LIST ---
+	const rulesContainer = document.getElementById("geoRulesTable");
+	rulesContainer.innerHTML = "";
+
+	const groupIds = Object.keys(rules);
+	if (groupIds.length === 0) {
+		rulesContainer.innerHTML =
+			'<div style="text-align: center; color: #94a3b8; padding: 20px;">Belum ada aturan akses.</div>';
+	} else {
+		groupIds.forEach((gid) => {
+			const data = rules[gid];
+			const provBadges = data.provinces
+				.map((p) => `<span class="badge-prov">${p}</span>`)
+				.join("");
+
+			const item = document.createElement("div");
+			item.className = "geo-rule-item";
+			item.innerHTML = `
+				<div class="geo-rule-header">
+					<span><i class="fas fa-users" style="color:#64748b; margin-right:6px;"></i> ${data.name}</span>
+					<button onclick="editGeoRule('${gid}')" style="background:none; border:none; color:#2563eb; cursor:pointer; font-size:0.8rem; font-weight:600;">Edit</button>
+				</div>
+				<div class="geo-rule-badges">
+					${provBadges}
+				</div>
+			`;
+			rulesContainer.appendChild(item);
+		});
+	}
+
+	// Simpan referensi rules global agar bisa diakses fungsi edit
+	window.currentGeoRules = rules;
+}
+
+window.saveGeoRule = async function () {
+	const groupSelect = document.getElementById("geoGroupSelect");
+	const groupPk = groupSelect.value;
+	const groupName =
+		groupSelect.options[groupSelect.selectedIndex]?.dataset.name;
+
+	if (!groupPk) {
+		showToast("Pilih Group terlebih dahulu", "error");
+		return;
+	}
+
+	const selectedProvs = Array.from(
+		document.querySelectorAll(".geo-prov-cb:checked"),
+	).map((cb) => cb.value);
+
+	if (selectedProvs.length === 0) {
+		if (
+			!confirm(
+				"Tidak ada provinsi dipilih. Ini akan menghapus akses group ini ke semua provinsi?",
+			)
+		)
+			return;
+	}
+
+	try {
+		const res = await fetch("/api/admin/province-rules", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				group_pk: groupPk,
+				group_name: groupName,
+				provinces: selectedProvs,
+			}),
+		});
+
+		if (res.ok) {
+			showToast("Aturan disimpan", "success");
+			// Reload data modal
+			loadGeoData();
+		} else {
+			showToast("Gagal menyimpan", "error");
+		}
+	} catch (e) {
+		showToast("Error koneksi", "error");
+	}
+};
+
+window.editGeoRule = function (groupPk) {
+	if (!window.currentGeoRules || !window.currentGeoRules[groupPk]) return;
+
+	// Set Dropdown
+	const sel = document.getElementById("geoGroupSelect");
+	sel.value = groupPk;
+
+	// Set Checkboxes
+	const data = window.currentGeoRules[groupPk];
+	const existingProvs = data.provinces;
+
+	document.querySelectorAll(".geo-prov-cb").forEach((cb) => {
+		cb.checked = existingProvs.includes(cb.value);
+	});
+
+	// Scroll ke atas
+	document.querySelector(".modal-content").scrollTop = 0;
+};
+
+// --- END GEO RESTRICTION LOGIC ---
+
 function updateFilters(data) {
 	const typeSelect = document.getElementById("typeFilter");
 	const provSelect = document.getElementById("provinceFilter");
 
-	// A. Populate Tipe Perangkat (Label)
 	const types = new Set();
 	data.forEach((m) => {
 		if (m.type) types.add(m.type);
 	});
 
-	// Helper untuk isi dropdown (biar tidak duplikat kode)
 	const populateSelect = (selectEl, items, currentVal) => {
 		selectEl.innerHTML = `<option value="all">Semua ${selectEl.id === "typeFilter" ? "Tipe" : "Provinsi"}</option>`;
 		items.sort().forEach((item) => {
@@ -385,21 +670,18 @@ function updateFilters(data) {
 
 	populateSelect(typeSelect, Array.from(types), typeSelect.value);
 
-	// B. Populate Provinsi
 	const provinces = new Set();
 	data.forEach((m) => {
 		if (m.province) provinces.add(m.province);
 	});
 	populateSelect(provSelect, Array.from(provinces), provSelect.value);
 
-	// C. Populate Kota (Inisialisasi awal)
-	// Kita panggil fungsi khusus untuk kota agar sinkron dengan provinsi yang terpilih saat ini
 	populateCityFilter(data, true);
 }
 
 window.onProvinceChange = function () {
-	populateCityFilter(currentMachines, true); // Update opsi kota
-	applyFilters(); // Terapkan filter
+	populateCityFilter(currentMachines, true);
+	applyFilters();
 };
 
 function populateCityFilter(data, forceUpdate = false) {
@@ -407,7 +689,6 @@ function populateCityFilter(data, forceUpdate = false) {
 	const citySelect = document.getElementById("cityFilter");
 	const currentCity = citySelect.value;
 
-	// Filter data kota berdasarkan provinsi yang dipilih (jika bukan 'all')
 	let relevantData = data;
 	if (provFilter !== "all") {
 		relevantData = data.filter((m) => m.province === provFilter);
@@ -419,7 +700,6 @@ function populateCityFilter(data, forceUpdate = false) {
 	});
 	const sortedCities = Array.from(cities).sort();
 
-	// Cek apakah perlu update DOM (Smart Render)
 	const currentOpts = Array.from(citySelect.options)
 		.map((o) => o.value)
 		.filter((v) => v !== "all");
@@ -435,47 +715,8 @@ function populateCityFilter(data, forceUpdate = false) {
 			opt.textContent = c;
 			citySelect.appendChild(opt);
 		});
-
-		// Restore pilihan jika masih valid
 		if (sortedCities.includes(currentCity)) citySelect.value = currentCity;
 		else citySelect.value = "all";
-	}
-}
-
-function updateLocationFilterOptions(data) {
-	const select = document.getElementById("locationFilter");
-	const currentVal = select.value; // Simpan pilihan user saat ini
-
-	// Ambil lokasi unik
-	const locations = new Set();
-	data.forEach((m) => {
-		if (m.city || m.province) {
-			const label =
-				m.city && m.province
-					? `${m.city}, ${m.province}`
-					: m.city || m.province;
-			locations.add(label);
-		} else {
-			locations.add("Lokasi Tidak Terdeteksi");
-		}
-	});
-
-	// Render Option
-	// Kita simpan opsi "Semua Lokasi" dulu
-	select.innerHTML = '<option value="all">Semua Lokasi</option>';
-
-	Array.from(locations)
-		.sort()
-		.forEach((loc) => {
-			const option = document.createElement("option");
-			option.value = loc;
-			option.textContent = loc;
-			select.appendChild(option);
-		});
-
-	// Kembalikan pilihan user jika opsi tersebut masih ada
-	if ([...select.options].some((o) => o.value === currentVal)) {
-		select.value = currentVal;
 	}
 }
 
@@ -484,30 +725,22 @@ window.applyFilters = function (resetPage = true) {
 		.getElementById("searchInput")
 		.value.toLowerCase()
 		.trim();
-
-	// Ambil Value Dropdown
 	const typeVal = document.getElementById("typeFilter").value;
 	const provVal = document.getElementById("provinceFilter").value;
 	const cityVal = document.getElementById("cityFilter").value;
-
-	// Ambil Value Checkbox Issue (Multi-select)
 	const checkedIssues = Array.from(
 		document.querySelectorAll('input[name="issue"]:checked'),
 	).map((cb) => cb.value);
 
 	filteredMachines = currentMachines.filter((m) => {
-		// 1. Search
 		const matchSearch =
 			!searchInput ||
 			m.id.toLowerCase().includes(searchInput) ||
 			m.host.toLowerCase().includes(searchInput);
-
-		// 2. Dropdown Filters (Exact Match or All)
 		const matchType = typeVal === "all" || m.type === typeVal;
 		const matchProv = provVal === "all" || m.province === provVal;
 		const matchCity = cityVal === "all" || m.city === cityVal;
 
-		// 3. Issue Checkbox Logic (OR Logic antar issue)
 		let matchIssue = true;
 		if (checkedIssues.length > 0) {
 			let hasIssue = false;
@@ -542,86 +775,68 @@ window.resetFilters = function () {
 	document.getElementById("searchInput").value = "";
 	document.getElementById("typeFilter").value = "all";
 	document.getElementById("provinceFilter").value = "all";
-	// Trigger onProvinceChange untuk reset kota juga
 	onProvinceChange();
-
 	document.querySelectorAll(".filter-cb").forEach((cb) => (cb.checked = false));
 	applyFilters();
 };
 
-function renderCheckboxGroup(containerId, items, selectedItems) {
-	const container = document.getElementById(containerId);
-	// Simpan pilihan user saat ini jika selectedItems tidak disediakan
-	// (Agar saat re-render karena search, centangan tidak hilang jika masih valid)
-	const currentChecked =
-		selectedItems ||
-		Array.from(container.querySelectorAll("input:checked")).map(
-			(cb) => cb.value,
-		);
-
-	container.innerHTML = "";
-
-	if (items.length === 0) {
-		container.innerHTML =
-			'<div style="font-size:0.8rem; color:#94a3b8; padding:5px;">Tidak ada opsi</div>';
-		return;
-	}
-
-	items.forEach((item) => {
-		// Skip jika item kosong/null
-		if (!item) return;
-
-		const label = document.createElement("label");
-		label.className = "cb-container";
-
-		const isChecked = currentChecked.includes(item) ? "checked" : "";
-
-		label.innerHTML = `
-            <input type="checkbox" class="filter-cb" name="${containerId}" value="${item}" ${isChecked} onchange="applyFilters()">
-            <span class="checkmark"></span>
-            <span class="cb-label">${item}</span>
-        `;
-		container.appendChild(label);
-	});
-}
-
 function renderMap(data) {
+	// [BARU] Bersihkan dan gambar ulang garis koneksi
+	connectionLinesLayer.clearLayers();
+
+	// Pastikan Marker HQ selalu ada (jika data sudah di-fetch)
+	renderHQMarker();
+
 	const activeIds = new Set();
 	data.forEach((m) => {
 		if (m.lat && m.lng) {
 			activeIds.add(m.id);
 
-			// 1. DETEKSI ISU
+			// [BARU] Gambar Garis dari HQ ke Node ini (Jika HQ sudah terload)
+			if (hqLocation && hqLocation.lat && hqLocation.lng) {
+				// Tentukan warna garis: Abu-abu jika online, Merah tipis jika offline
+				const lineColor = m.online ? "#94a3b8" : "#fecaca"; // Slate-400 vs Red-200
+				const lineDash = m.online ? null : "5, 5"; // Putus-putus jika offline
+				const lineOpacity = m.online ? 0.6 : 0.8;
+
+				L.polyline(
+					[
+						[hqLocation.lat, hqLocation.lng],
+						[m.lat, m.lng],
+					],
+					{
+						color: lineColor,
+						weight: 3, // [UBAH] Lebih tebal
+						opacity: lineOpacity,
+						dashArray: lineDash,
+						smoothFactor: 1,
+					},
+				).addTo(connectionLinesLayer);
+			}
+
 			const isOnline = m.online;
 			const isHighLat = isOnline && m.latency_ms > configLatency;
 			const isHighTraf =
 				isOnline &&
 				(m.rx_rate > configBandwidth || m.tx_rate > configBandwidth);
 
-			// 2. TENTUKAN WARNA MARKER & ANIMASI
-			let markerClass = "status-online"; // Default Hijau
-			let pulseClass = "pulse-ring"; // Default Hijau
+			let markerClass = "status-online";
+			let pulseClass = "pulse-ring";
 			let latencyClass = "is-online";
 
 			if (!isOnline) {
-				// Prioritas 1: OFFLINE (Merah)
 				markerClass = "status-offline";
 				pulseClass = "pulse-ring offline";
 				latencyClass = "is-offline";
 			} else if (isHighLat) {
-				// Prioritas 2: HIGH LATENCY (Oranye)
 				markerClass = "status-warning";
 				pulseClass = "pulse-ring warning";
 			} else if (isHighTraf) {
-				// Prioritas 3: HIGH TRAFFIC (Biru)
 				markerClass = "status-traffic";
 				pulseClass = "pulse-ring traffic";
 			}
 
-			// 3. GENERATE HTML MARKER
 			const iconClass = m.icon || "fa-server";
-
-			// Label bawah marker (Latency text)
 			let latencyText = `${getSafeValue(m, "latency_ms")}ms`;
 			if (!isOnline) latencyText = "Offline";
 			else if (isHighLat) latencyText = `${m.latency_ms}ms (Slow)`;
@@ -632,7 +847,6 @@ function renderMap(data) {
                 <i class="fas ${isOnline ? "fa-bolt" : "fa-clock"}"></i> ${latencyText}
             </div>`;
 
-			// Struktur HTML Marker
 			const htmlContent = `
 				<div class="marker-wrapper">
 					<div class="${pulseClass}"></div>
@@ -643,18 +857,14 @@ function renderMap(data) {
 					${latencyHtml}
 				</div>`;
 
-			// ... (Sisa logika markerMap & Popup tetap sama seperti sebelumnya) ...
-
-			// [Popup Logic Simple Copy]
 			const icon = L.divIcon({
-				className: "custom-marker", // Class khusus untuk custom marker
+				className: "custom-marker",
 				html: htmlContent,
-				iconSize: [44, 44], // Pastikan ukuran sesuai dengan CSS
-				iconAnchor: [22, 22], // Anchor di tengah marker
-				popupAnchor: [0, -26], // Popup muncul di atas marker
+				iconSize: [44, 44],
+				iconAnchor: [22, 22],
+				popupAnchor: [0, -26],
 			});
 
-			// Popup HTML generation (Standard)
 			const bwHtml =
 				m.use_snmp && isOnline
 					? `<div style="display:flex; gap:12px; font-size:0.85rem; font-weight:600; color:#475569; margin-bottom:12px; background:#f1f5f9; padding:8px 12px; border-radius:8px; justify-content:center;"><span><i class="fas fa-arrow-down" style="color:#10b981"></i> ${getSafeValue(m, "rx_rate")} K</span><span><i class="fas fa-arrow-up" style="color:#3b82f6"></i> ${getSafeValue(m, "tx_rate")} K</span></div>`
@@ -669,7 +879,6 @@ function renderMap(data) {
 			} else {
 				const newMarker = L.marker([m.lat, m.lng], {
 					icon: icon,
-					// Tambahkan option untuk mencegah dragging jika tidak diperlukan
 					draggable: false,
 				})
 					.bindPopup(popupHtml)
@@ -678,7 +887,6 @@ function renderMap(data) {
 			}
 		}
 	});
-	// Remove old markers
 	Object.keys(markerMap).forEach((id) => {
 		if (!activeIds.has(id)) {
 			markersLayer.removeLayer(markerMap[id]);
@@ -687,6 +895,9 @@ function renderMap(data) {
 	});
 }
 
+// ==========================================
+// [PERBAIKAN] LOGIKA RENDER & UPDATE DAFTAR
+// ==========================================
 function renderList(data) {
 	const container = document.getElementById("cards-container");
 
@@ -712,6 +923,7 @@ function renderList(data) {
 	const startIndex = (currentPage - 1) * itemsPerPage;
 	const paginatedData = data.slice(startIndex, startIndex + itemsPerPage);
 
+	// Tombol di List Header (Sidebar Handle sendiri)
 	const adminWrapper = document.getElementById("adminAddBtnWrapper");
 	if (adminWrapper)
 		adminWrapper.innerHTML =
@@ -719,7 +931,25 @@ function renderList(data) {
 				? `<button class="btn-primary" onclick="openAddModal()" style="padding: 8px 12px;"><i class="fas fa-plus"></i></button>`
 				: "";
 
-	container.innerHTML = "";
+	// [SMART UPDATE CHECK]
+	const currentCardIds = Array.from(
+		container.querySelectorAll(".card-node"),
+	).map((el) => el.getAttribute("data-id"));
+	const newCardIds = paginatedData.map((m) => m.id);
+	const isSameStructure =
+		currentCardIds.length === newCardIds.length &&
+		currentCardIds.every((id, index) => id === newCardIds[index]);
+
+	renderPaginationControls(totalPages, totalItems);
+
+	if (isSameStructure) {
+		updateCards(paginatedData);
+	} else {
+		fullRenderCards(paginatedData, container);
+	}
+}
+
+function fullRenderCards(data, container) {
 	Object.keys(listChartInstances).forEach((id) => {
 		if (listChartInstances[id]) {
 			listChartInstances[id].destroy();
@@ -727,17 +957,15 @@ function renderList(data) {
 		}
 	});
 
+	container.innerHTML = "";
 	let lastGroupKey = null;
 
-	paginatedData.forEach((m) => {
+	data.forEach((m) => {
 		const prov = m.province || "Lainnya";
 		const city = m.city || "Tidak Diketahui";
-
-		// Grouping Key: Gabungan Provinsi + Kota untuk mendeteksi perubahan
 		const currentGroupKey = `${prov}-${city}`;
 
 		if (currentGroupKey !== lastGroupKey) {
-			// Tampilan Header
 			const headerHtml = `
                 <div style="grid-column: 1 / -1; margin: 20px 0 8px 0; display: flex; align-items: center; gap: 8px; color: #475569; padding-bottom: 4px; border-bottom: 2px solid #f1f5f9;">
                     <div style="font-weight: 700; font-size: 1rem;">${prov}</div>
@@ -749,77 +977,139 @@ function renderList(data) {
 			lastGroupKey = currentGroupKey;
 		}
 
+		// Generate HTML Card
 		const isOnline = m.online;
 		const isHighLat = isOnline && m.latency_ms > configLatency;
 		const isHighTraf =
 			isOnline && (m.rx_rate > configBandwidth || m.tx_rate > configBandwidth);
+
+		let cardClass = "card card-node ";
+		if (!isOnline) cardClass += "offline";
+		else if (isHighLat) cardClass += "issue-latency";
+		else if (isHighTraf) cardClass += "issue-traffic";
+		else cardClass += "online";
+
 		const iconClass = m.icon || "fa-server";
-		let cardClass = "online";
-		if (!isOnline) {
-			cardClass = "offline";
-		} else if (isHighLat) {
-			cardClass = "issue-latency"; // Card jadi kuning/oranye
-		} else if (isHighTraf) {
-			cardClass = "issue-traffic"; // Card jadi biru
-		}
+
 		const statusHtml = isOnline
 			? `<div class="status-pill online"><div class="dot-indicator"></div> ONLINE</div>`
 			: `<div class="status-pill offline"><div class="dot-indicator"></div> OFFLINE</div>`;
-		const latencyColor = isHighLat ? "#d97706" : "#eab308"; // Darker orange if issue
+
+		const latencyColor = isHighLat ? "#d97706" : "#eab308";
 		const latencyText = isOnline
 			? `<i class="fas fa-bolt" style="color:${latencyColor}"></i> ${getSafeValue(m, "latency_ms")} ms`
 			: `<i class="fas fa-clock"></i> ${getSafeValue(m, "last_seen", "Never")}`;
+
 		const telemetryHtml =
 			m.use_snmp && isOnline
-				? `<div class="net-stat" id="telemetry-${m.id}"><span><i class="fas fa-arrow-down" style="color:#10b981"></i> ${getSafeValue(m, "rx_rate")} K</span><span><i class="fas fa-arrow-up" style="color:#3b82f6"></i> ${getSafeValue(m, "tx_rate")} K</span></div>`
+				? `<div class="net-stat"><span><i class="fas fa-arrow-down" style="color:#10b981"></i> ${getSafeValue(m, "rx_rate")} K</span><span><i class="fas fa-arrow-up" style="color:#3b82f6"></i> ${getSafeValue(m, "tx_rate")} K</span></div>`
 				: m.use_snmp
 					? `<div class="monitoring-stopped">Stopped</div>`
 					: `<div class="ping-only">Ping Only</div>`;
+
 		const adminBtns =
 			currentUserRole === "admin"
 				? `<button class="btn-card-action" onclick="openEditModal('${m.id}')"><i class="fas fa-pen"></i></button><button class="btn-card-action btn-action-del" onclick="openDeleteModal('${m.id}')"><i class="fas fa-trash"></i></button>`
 				: "";
+
 		let issueBadgesHtml = "";
 		if (isOnline) {
-			if (isHighLat) {
+			if (isHighLat)
 				issueBadgesHtml += `<span class="badge-issue warning"><i class="fas fa-exclamation-triangle"></i> High Latency</span>`;
-			}
-			if (isHighTraf) {
+			if (isHighTraf)
 				issueBadgesHtml += `<span class="badge-issue traffic"><i class="fas fa-tachometer-alt"></i> High Traffic</span>`;
-			}
 		}
 
 		const html = `
-    <div id="card-${m.id}" data-id="${m.id}" class="card card-node ${cardClass}">
-        <div class="card-top">
-            <div class="card-icon" id="icon-${m.id}"><i class="fas ${iconClass}"></i></div>
-            <div class="card-info">
-                <h4>${m.id}</h4>
-                <p id="info-${m.id}">${m.type} - ${m.host}</p>
-                <div class="issue-badges-container">${issueBadgesHtml}</div>
-            </div>
-        </div>
-        <div class="metric-row">
-            ${statusHtml}
-            <span id="latency-${m.id}">${latencyText}</span>
-        </div>
-        <div id="telemetry-container">${telemetryHtml}</div>
-        <div class="chart-wrapper" onclick="openDetailModal('${m.id}', 'latency')" title="Klik untuk perbesar">
-            <canvas id="chart-${m.id}"></canvas>
-        </div>
-        <div class="card-actions">
-            <button class="btn-card-action" onclick="openDetailModal('${m.id}', 'status')" style="color:#7c3aed; border-color:#7c3aed; background:#f5f3ff;"><i class="fas fa-history"></i></button>
-            <button class="btn-card-action" onclick="openDetailModal('${m.id}', 'latency')" style="color:var(--primary); border-color:var(--primary); background:#eff6ff;"><i class="fas fa-chart-line"></i></button>
-            ${adminBtns}
-        </div>
-    </div>`;
+            <div id="card-${m.id}" data-id="${m.id}" class="${cardClass}">
+                <div class="card-top">
+                    <div class="card-icon" id="icon-${m.id}"><i class="fas ${iconClass}"></i></div>
+                    <div class="card-info">
+                        <h4>${m.id}</h4>
+                        <p id="info-${m.id}">${m.type} - ${m.host}</p>
+                        <div id="badges-${m.id}" class="issue-badges-container">${issueBadgesHtml}</div>
+                    </div>
+                </div>
+                <div class="metric-row">
+                    <span id="status-${m.id}">${statusHtml}</span>
+                    <span id="latency-${m.id}">${latencyText}</span>
+                </div>
+                <div id="telemetry-container-${m.id}">${telemetryHtml}</div>
+                <div class="chart-wrapper" onclick="openDetailModal('${m.id}', 'latency')" title="Klik untuk perbesar">
+                    <canvas id="chart-${m.id}"></canvas>
+                </div>
+                <div class="card-actions">
+                    <button class="btn-card-action" onclick="openDetailModal('${m.id}', 'status')" style="color:#7c3aed; border-color:#7c3aed; background:#f5f3ff;"><i class="fas fa-history"></i></button>
+                    <button class="btn-card-action" onclick="openDetailModal('${m.id}', 'latency')" style="color:var(--primary); border-color:var(--primary); background:#eff6ff;"><i class="fas fa-chart-line"></i></button>
+                    ${adminBtns}
+                </div>
+            </div>`;
 
 		container.insertAdjacentHTML("beforeend", html);
+
 		if (currentViewMode !== "compact" && currentViewMode !== "minimal")
 			initListChart(m);
 	});
+}
 
-	renderPaginationControls(totalPages, totalItems);
+function updateCards(data) {
+	data.forEach((m) => {
+		const card = document.getElementById(`card-${m.id}`);
+		if (!card) return;
+
+		const isOnline = m.online;
+		const isHighLat = isOnline && m.latency_ms > configLatency;
+		const isHighTraf =
+			isOnline && (m.rx_rate > configBandwidth || m.tx_rate > configBandwidth);
+
+		let cardClass = "card card-node ";
+		if (!isOnline) cardClass += "offline";
+		else if (isHighLat) cardClass += "issue-latency";
+		else if (isHighTraf) cardClass += "issue-traffic";
+		else cardClass += "online";
+
+		if (card.className !== cardClass) card.className = cardClass;
+
+		const statusHtml = isOnline
+			? `<div class="status-pill online"><div class="dot-indicator"></div> ONLINE</div>`
+			: `<div class="status-pill offline"><div class="dot-indicator"></div> OFFLINE</div>`;
+
+		const latencyColor = isHighLat ? "#d97706" : "#eab308";
+		const latencyText = isOnline
+			? `<i class="fas fa-bolt" style="color:${latencyColor}"></i> ${getSafeValue(m, "latency_ms")} ms`
+			: `<i class="fas fa-clock"></i> ${getSafeValue(m, "last_seen", "Never")}`;
+
+		const elStatus = document.getElementById(`status-${m.id}`);
+		const elLatency = document.getElementById(`latency-${m.id}`);
+
+		if (elStatus && elStatus.innerHTML !== statusHtml)
+			elStatus.innerHTML = statusHtml;
+		if (elLatency && elLatency.innerHTML !== latencyText)
+			elLatency.innerHTML = latencyText;
+
+		const telemetryHtml =
+			m.use_snmp && isOnline
+				? `<div class="net-stat"><span><i class="fas fa-arrow-down" style="color:#10b981"></i> ${getSafeValue(m, "rx_rate")} K</span><span><i class="fas fa-arrow-up" style="color:#3b82f6"></i> ${getSafeValue(m, "tx_rate")} K</span></div>`
+				: m.use_snmp
+					? `<div class="monitoring-stopped">Stopped</div>`
+					: `<div class="ping-only">Ping Only</div>`;
+		const elTele = document.getElementById(`telemetry-container-${m.id}`);
+		if (elTele) elTele.innerHTML = telemetryHtml;
+
+		let issueBadgesHtml = "";
+		if (isOnline) {
+			if (isHighLat)
+				issueBadgesHtml += `<span class="badge-issue warning"><i class="fas fa-exclamation-triangle"></i> High Latency</span>`;
+			if (isHighTraf)
+				issueBadgesHtml += `<span class="badge-issue traffic"><i class="fas fa-tachometer-alt"></i> High Traffic</span>`;
+		}
+		const elBadges = document.getElementById(`badges-${m.id}`);
+		if (elBadges) elBadges.innerHTML = issueBadgesHtml;
+
+		if (currentViewMode !== "compact" && currentViewMode !== "minimal") {
+			updateListChart(m);
+		}
+	});
 }
 
 function renderPaginationControls(pages, items) {
@@ -845,7 +1135,6 @@ function renderPaginationControls(pages, items) {
 window.changePage = function (p) {
 	if (p < 1) return;
 	currentPage = p;
-	// PENTING: Render filteredMachines, bukan currentMachines (agar hasil search tidak hilang saat pindah hal)
 	renderList(filteredMachines);
 };
 
@@ -855,7 +1144,7 @@ function initListChart(m) {
 	if (!el) return;
 	if (listChartInstances[m.id]) listChartInstances[m.id].destroy();
 	const ctx = el.getContext("2d");
-	let limit = currentViewMode === "normal" ? 10 : 30; // 30 DETIK (10 data)
+	let limit = currentViewMode === "normal" ? 10 : 30;
 	const d = m.history.slice(-limit);
 	listChartInstances[m.id] = new Chart(ctx, {
 		type: "line",
@@ -909,6 +1198,22 @@ function initListChart(m) {
 		},
 	});
 }
+
+function updateListChart(m) {
+	const chart = listChartInstances[m.id];
+	if (!chart) {
+		initListChart(m);
+		return;
+	}
+	let limit = currentViewMode === "normal" ? 10 : 30;
+	const d = m.history.slice(-limit);
+	chart.data.labels = d.map((h) => h.time.split(" ")[1]);
+	chart.data.datasets[0].data = d.map((h) =>
+		h.status === "OFFLINE" ? null : getSafeValue(h, "latency"),
+	);
+	chart.update("none");
+}
+
 function drawPopupChart(m) {
 	const el = document.getElementById(`popup-chart-${m.id}`);
 	if (!el) return;
@@ -1133,7 +1438,6 @@ window.submitAdd = async function () {
 			? document.getElementById("addTypeCustom").value
 			: document.getElementById("addTypeSelect").value;
 
-	// Ambil value checkbox (1 atau 0)
 	const notify_down = document.getElementById("addNotifyDown").checked ? 1 : 0;
 	const notify_traffic = document.getElementById("addNotifyTraffic").checked
 		? 1
@@ -1163,7 +1467,6 @@ window.submitAdd = async function () {
 			}),
 		});
 
-		// [FIX] Baca respons JSON dari backend
 		const data = await res.json();
 
 		if (res.ok) {
@@ -1171,7 +1474,6 @@ window.submitAdd = async function () {
 			showToast("Berhasil Menambahkan Node", "success");
 			loadStatus();
 		} else {
-			// [FIX] Tampilkan pesan error spesifik (misal: "Node ID sudah ada")
 			showToast(data.error || "Gagal menambahkan node", "error");
 		}
 	} catch (e) {
@@ -1239,7 +1541,6 @@ window.submitEdit = async function () {
 			}),
 		});
 
-		// [FIX] Baca respons JSON dari backend
 		const data = await res.json();
 
 		if (res.ok) {
@@ -1247,7 +1548,6 @@ window.submitEdit = async function () {
 			showToast("Node Berhasil Diupdate", "success");
 			loadStatus();
 		} else {
-			// [FIX] Tampilkan pesan error spesifik (misal: "IP Address sudah digunakan")
 			showToast(data.error || "Gagal mengupdate node", "error");
 		}
 	} catch (e) {

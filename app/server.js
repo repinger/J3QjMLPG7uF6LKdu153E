@@ -37,7 +37,6 @@ function preventCache(req, res, next) {
 }
 
 // [PENTING] Blokir akses langsung ke file dashboard.html (Security Fix)
-// Ini mencegah user bypass login dengan mengetik /dashboard.html
 app.use("/dashboard.html", (req, res) => {
 	res.redirect("/");
 });
@@ -66,7 +65,7 @@ function ensureAdmin(req, res, next) {
 
 // --- ROUTES ---
 
-// Route Login: Pastikan juga tidak di-cache agar statusnya selalu fresh
+// Route Login
 app.get("/login", preventCache, (req, res) => {
 	if (req.session.user) return res.redirect("/");
 	res.sendFile(path.join(__dirname, "public", "login.html"));
@@ -183,6 +182,12 @@ app.post("/api/alerts/clear", ensureAuthenticated, (req, res) =>
 app.get("/api/status", ensureAuthenticated, preventCache, (req, res) =>
 	proxy("get", "/api/status", req, res),
 );
+
+// Route Proxy untuk HQ
+app.get("/api/hq", ensureAuthenticated, preventCache, (req, res) =>
+	proxy("get", "/api/hq", req, res),
+);
+
 app.post("/api/history", ensureAuthenticated, (req, res) =>
 	proxy("post", "/api/history", req, res),
 );
@@ -205,8 +210,38 @@ app.post("/api/remove", ensureAuthenticated, ensureAdmin, (req, res) =>
 app.get("/api/settings", ensureAuthenticated, preventCache, (req, res) =>
 	proxy("get", "/api/settings", req, res),
 );
-app.post("/api/settings", ensureAuthenticated, (req, res) =>
+
+app.post("/api/settings", ensureAuthenticated, ensureAdmin, (req, res) =>
 	proxy("post", "/api/settings", req, res),
+);
+
+// --- [BARU] GEO RESTRICTION ROUTES ---
+app.get(
+	"/api/admin/authentik-groups",
+	ensureAuthenticated,
+	ensureAdmin,
+	preventCache,
+	(req, res) => proxy("get", "/api/admin/authentik-groups", req, res),
+);
+app.get(
+	"/api/admin/provinces",
+	ensureAuthenticated,
+	ensureAdmin,
+	preventCache,
+	(req, res) => proxy("get", "/api/admin/provinces", req, res),
+);
+app.get(
+	"/api/admin/province-rules",
+	ensureAuthenticated,
+	ensureAdmin,
+	preventCache,
+	(req, res) => proxy("get", "/api/admin/province-rules", req, res),
+);
+app.post(
+	"/api/admin/province-rules",
+	ensureAuthenticated,
+	ensureAdmin,
+	(req, res) => proxy("post", "/api/admin/province-rules", req, res),
 );
 
 app.listen(PORT, () => console.log(`Gateway running on port ${PORT}`));

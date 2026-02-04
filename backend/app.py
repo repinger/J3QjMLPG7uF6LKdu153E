@@ -6,13 +6,73 @@ from oidc_service import authenticate_oidc
 import threading
 import time
 import sqlite3
-import requests  # [BARU] Pastikan library requests terinstall
+import requests
 
 app = Flask(__name__)
+
+MANAGER_API_URL = "http://app-manager:5001/api/groups"
 
 # Init DB & Monitoring thread
 init_db()
 threading.Thread(target=monitor_loop, daemon=True).start()
+
+# --- [BARU] GLOBAL VAR & THREAD UNTUK DETEKSI PUBLIC IP (IPINFO.IO) ---
+HQ_INFO = {
+    "lat": None,
+    "lng": None,
+    "city": "Unknown",
+    "ip": "Unknown",
+    "org": ""
+}
+
+def detect_hq_location():
+    """
+    Mendeteksi Public IP dan Lokasi Server menggunakan ipinfo.io.
+    Dijalankan di background thread saat startup.
+    """
+    global HQ_INFO
+    try:
+        # Request ke ipinfo.io
+        resp = requests.get('https://ipinfo.io/json', timeout=10)
+        
+        if resp.status_code == 200:
+            data = resp.json()
+            # ipinfo mengembalikan "loc": "lat,lng" (string), perlu dipisah
+            loc_str = data.get('loc', '')
+            lat, lng = 0, 0
+            if ',' in loc_str:
+                try:
+                    parts = loc_str.split(',')
+                    lat = float(parts[0])
+                    lng = float(parts[1])
+                except ValueError:
+                    pass
+
+            HQ_INFO = {
+                "lat": lat,
+                "lng": lng,
+                "city": data.get('city', 'Unknown'),
+                "region": data.get('region', ''),
+                "country": data.get('country', ''),
+                "ip": data.get('ip', 'Unknown'),
+                "org": data.get('org', '') # Nama ISP / Organisasi
+            }
+            print(f"[*] HQ Location Detected (ipinfo.io): {HQ_INFO['city']}, {HQ_INFO['region']} ({HQ_INFO['ip']})")
+        else:
+            print(f"[!] Failed to detect location: {resp.status_code}")
+            
+    except Exception as e:
+        print(f"[!] HQ Detection Error: {e}")
+
+# Jalankan deteksi lokasi sekali saat startup
+threading.Thread(target=detect_hq_location, daemon=True).start()
+
+@app.route('/api/hq', methods=['GET'])
+def get_hq_info():
+    """Endpoint untuk memberikan info lokasi server pusat"""
+    return jsonify(HQ_INFO)
+
+# --------------------------------------------------------------------
 
 def get_setting(key, default_val):
     conn = get_db_connection()
@@ -48,7 +108,7 @@ def update_settings():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-# --- HELPER: REVERSE GEOCODING ---
+# --- HELPER: REVERSE GEOCODING (Nominatim - untuk Node biasa) ---
 def get_location_name(lat, lng):
     """
     Mengambil nama Kota dan Provinsi berdasarkan koordinat
@@ -81,8 +141,75 @@ def get_location_name(lat, lng):
     
     return "", ""
 
-# --- AUTH & NOTIFICATION ROUTES (TETAP SAMA SEPERTI SEBELUMNYA) ---
-# ... (Kode endpoint login, alerts, dll biarkan seperti semula) ...
+@app.route('/api/admin/authentik-groups', methods=['GET'])
+def get_authentik_groups():
+    """
+    Proxy untuk mengambil daftar grup dari App Manager.
+    """
+    try:
+        # Panggil endpoint yang baru kita buat di Langkah 1
+        resp = requests.get(MANAGER_API_URL, timeout=5)
+        if resp.status_code == 200:
+            return jsonify(resp.json())
+        else:
+            return jsonify({"error": "Failed to fetch groups from manager", "status": resp.status_code}), 502
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/admin/provinces', methods=['GET'])
+def get_available_provinces():
+    conn = get_db_connection()
+    try:
+        rows = conn.execute("SELECT DISTINCT province FROM machines WHERE province IS NOT NULL AND province != '' ORDER BY province ASC").fetchall()
+        provinces = [row['province'] for row in rows]
+        return jsonify(provinces)
+    finally:
+        conn.close()
+
+@app.route('/api/admin/province-rules', methods=['GET', 'POST'])
+def manage_province_rules():
+    conn = get_db_connection()
+    try:
+        if request.method == 'GET':
+            rules = conn.execute("SELECT group_pk, group_name, province FROM province_rules").fetchall()
+
+            result = {}
+            for r in rules:
+                pk = r['group_pk']
+                if pk not in result:
+                    result[pk] = {"name": r['group_name'], "provinces": []}
+                result[pk]["provinces"].append(r['province'])
+            
+            return jsonify(result)
+
+        elif request.method == 'POST':
+            data = request.json
+            
+            group_pk = data.get('group_pk')
+            group_name = data.get('group_name')
+            provinces = data.get('provinces', [])
+            
+            if not group_pk:
+                return jsonify({"error": "Group PK required"}), 400
+
+            conn.execute("DELETE FROM province_rules WHERE group_pk = ?", (group_pk,))
+            
+            for prov in provinces:
+                conn.execute(
+                    "INSERT INTO province_rules (group_pk, group_name, province) VALUES (?, ?, ?)",
+                    (group_pk, group_name, prov)
+                )
+            
+            conn.commit()
+            return jsonify({"success": True, "message": "Rules updated"})
+
+    except Exception as e:
+        print(f"[!] Rule Error: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        conn.close()
+
+# --- AUTH & NOTIFICATION ROUTES (TETAP SAMA) ---
 
 @app.route('/login', methods=['POST'])      
 @app.route('/api/auth/login', methods=['POST'])
@@ -113,10 +240,8 @@ def mark_alerts_read():
         conn.commit()
         return jsonify({"success": True})
     except Exception as e:
-        # Tangkap error jika masih terjadi
         return jsonify({"success": False, "error": str(e)}), 500
     finally:
-        # Pastikan koneksi selalu ditutup
         conn.close()
 
 @app.route('/api/alerts/clear', methods=['POST'])
@@ -156,7 +281,7 @@ def get_history():
     conn.close()
     return jsonify([dict(r) for r in reversed(rows)])
 
-# --- MACHINE ROUTES (UPDATE DI SINI) ---
+# --- MACHINE ROUTES ---
 
 @app.route('/add', methods=['POST'])
 @app.route('/api/add', methods=['POST'])
@@ -188,7 +313,6 @@ def add_machine():
         n_traf = int(d.get('notify_traffic', 1))
         n_email = int(d.get('notify_email', 0))
 
-        # [UPDATE] Insert city & province
         conn.execute('''INSERT INTO machines 
             (id, host, type, icon, use_snmp, lat, lng, notify_down, notify_traffic, notify_email, online, city, province) 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)''', 
@@ -210,7 +334,6 @@ def edit_machine():
     m_id = d.get('id')
     host = d.get('host')
 
-    # [BARU] Auto Detect Location saat Edit
     lat = float(d.get('lat', 0))
     lng = float(d.get('lng', 0))
     city, province = get_location_name(lat, lng)
@@ -220,7 +343,6 @@ def edit_machine():
         exist_host = conn.execute("SELECT 1 FROM machines WHERE host = ? AND id != ?", (host, m_id)).fetchone()
         if exist_host: return jsonify({"error": f"IP Address '{host}' sudah digunakan node lain!"}), 400
 
-        # [UPDATE] Update query includes city & province
         conn.execute('''UPDATE machines SET 
             host=?, type=?, icon=?, use_snmp=?, lat=?, lng=?,
             notify_down=?, notify_traffic=?, notify_email=?,
