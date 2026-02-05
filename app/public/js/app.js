@@ -181,10 +181,38 @@ function drawConnectionLines(data) {
 
 	data.forEach((m) => {
 		if (m.lat && m.lng) {
-			// Tentukan warna garis: Abu-abu jika online, Merah tipis jika offline
-			const lineColor = m.online ? "#94a3b8" : "#fecaca"; // Slate-400 vs Red-200
-			const lineDash = m.online ? null : "5, 5"; // Putus-putus jika offline
-			const lineOpacity = m.online ? 0.6 : 0.8; // Sedikit lebih opaque
+			// --- LOGIKA BARU START ---
+			const isOnline = m.online;
+			// Gunakan konfigurasi global untuk threshold
+			const isHighLat = isOnline && m.latency_ms > configLatency;
+			const isHighTraf =
+				isOnline &&
+				(m.rx_rate > configBandwidth || m.tx_rate > configBandwidth);
+
+			// Default Style (Normal / Sehat)
+			let lineColor = "#94a3b8"; // Slate-400 (Abu-abu)
+			let lineDash = null;
+			let lineOpacity = 0.4; // Lebih tipis agar tidak mengganggu
+			let lineWeight = 2;
+
+			if (!isOnline) {
+				// KONDISI 1: OFFLINE (Prioritas Tertinggi)
+				lineColor = "#ef4444"; // Merah terang
+				lineDash = "5, 10"; // Putus-putus renggang
+				lineOpacity = 0.8;
+				lineWeight = 3;
+			} else if (isHighLat) {
+				// KONDISI 2: HIGH LATENCY
+				lineColor = "#f59e0b"; // Orange/Amber
+				lineOpacity = 1.0; // Solid dan Jelas
+				lineWeight = 3;
+			} else if (isHighTraf) {
+				// KONDISI 3: HIGH TRAFFIC
+				lineColor = "#3b82f6"; // Biru
+				lineOpacity = 0.9;
+				lineWeight = 3;
+			}
+			// --- LOGIKA BARU END ---
 
 			L.polyline(
 				[
@@ -193,10 +221,12 @@ function drawConnectionLines(data) {
 				],
 				{
 					color: lineColor,
-					weight: 3, // [UBAH] Lebih tebal (sebelumnya 1.5)
+					weight: lineWeight,
 					opacity: lineOpacity,
 					dashArray: lineDash,
 					smoothFactor: 1,
+					// Menambahkan interaksi opsional (hover effect)
+					interactive: false,
 				},
 			).addTo(connectionLinesLayer);
 		}
@@ -337,15 +367,37 @@ window.changeDensity = function (val) {
 	renderList(currentMachines);
 };
 
-// --- MAP LOGIC ---
+function isValidHost(host) {
+	const ipv4Pattern =
+		/^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+
+	const hostnamePattern =
+		/^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$|^localhost$/;
+
+	const ipv6Pattern =
+		/^([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)$/;
+
+	return (
+		ipv4Pattern.test(host) ||
+		hostnamePattern.test(host) ||
+		ipv6Pattern.test(host)
+	);
+}
+
+// [UPDATE] Handler Klik Peta
 map.on("click", function (e) {
 	if (currentUserRole !== "admin") return;
+
+	// Hapus marker sementara sebelumnya jika ada
 	if (tempClickMarker) {
 		map.removeLayer(tempClickMarker);
 		tempClickMarker = null;
 	}
-	const lat = e.latlng.lat.toFixed(6),
-		lng = e.latlng.lng.toFixed(6);
+
+	const lat = e.latlng.lat.toFixed(6);
+	const lng = e.latlng.lng.toFixed(6);
+
+	// Gunakan ikon plus yang sama
 	const icon = L.divIcon({
 		className: "",
 		html: `<div class="marker-wrapper"><div class="pulse-ring" style="background:#2563eb; animation: pulsate 1.5s infinite;"></div><div class="marker-icon" style="background:#2563eb; border: 3px solid white;"><i class="fas fa-plus"></i></div></div>`,
@@ -353,11 +405,33 @@ map.on("click", function (e) {
 		iconAnchor: [22, 22],
 		popupAnchor: [0, -26],
 	});
+
+	// Konten Popup dengan DUA tombol
+	const popupContent = `
+        <div style="text-align:center; padding:12px; min-width:240px; font-family: 'Plus Jakarta Sans', sans-serif;">
+            <div style="margin-bottom:12px;">
+                <div style="font-weight:700; color:#1e293b; font-size:1rem;">Lokasi Terpilih</div>
+                <div style="color:#64748b; font-size:0.85rem; margin-top:4px;">
+                    <i class="fas fa-map-pin"></i> ${lat}, ${lng}
+                </div>
+            </div>
+            
+            <div style="display:flex; flex-direction:column; gap:8px;">
+                <button onclick="openAddModal('${lat}', '${lng}')" 
+                    style="width:100%; background:#2563eb; color:white; border:none; padding:10px 16px; border-radius:8px; cursor:pointer; font-weight:600; display:flex; align-items:center; justify-content:center; gap:8px;">
+                    <i class="fas fa-plus-circle"></i> Tambah Node
+                </button>
+                
+                <button onclick="setHQFromMap('${lat}', '${lng}')" 
+                    style="width:100%; background:white; color:#4f46e5; border:1px solid #4f46e5; padding:8px 16px; border-radius:8px; cursor:pointer; font-weight:600; display:flex; align-items:center; justify-content:center; gap:8px;">
+                    <i class="fas fa-building"></i> Jadikan Server Pusat
+                </button>
+            </div>
+        </div>`;
+
 	tempClickMarker = L.marker([lat, lng], { icon: icon, zIndexOffset: 9999 })
 		.addTo(map)
-		.bindPopup(
-			`<div style="text-align:center; padding:12px; min-width:220px; font-family: 'Plus Jakarta Sans', sans-serif;"><div style="margin-bottom:10px;"><div style="font-weight:700; color:#1e293b; font-size:1rem;">Lokasi Terpilih</div><div style="color:#64748b; font-size:0.85rem; margin-top:4px;"><i class="fas fa-map-pin"></i> ${lat}, ${lng}</div></div><button onclick="openAddModal('${lat}', '${lng}')" style="width:100%; background:#2563eb; color:white; border:none; padding:10px 16px; border-radius:8px; cursor:pointer; font-weight:600; display:flex; align-items:center; justify-content:center; gap:8px;"><i class="fas fa-plus"></i> Tambah Node</button></div>`,
-		)
+		.bindPopup(popupContent)
 		.openPopup();
 });
 
@@ -436,7 +510,7 @@ window.openSettingsModal = function () {
 		);
 		return;
 	}
-	
+
 	document.getElementById("confLatency").value = configLatency;
 	document.getElementById("confBandwidth").value = configBandwidth;
 	document.getElementById("settingsModal").style.display = "flex";
@@ -742,22 +816,24 @@ window.applyFilters = function (resetPage = true) {
 		const matchCity = cityVal === "all" || m.city === cityVal;
 
 		let matchIssue = true;
+
 		if (checkedIssues.length > 0) {
-			let hasIssue = false;
-			if (checkedIssues.includes("offline") && !m.online) hasIssue = true;
-			if (
-				checkedIssues.includes("high_latency") &&
-				m.online &&
-				m.latency_ms > configLatency
-			)
-				hasIssue = true;
-			if (
-				checkedIssues.includes("high_traffic") &&
-				m.online &&
-				(m.rx_rate > configBandwidth || m.tx_rate > configBandwidth)
-			)
-				hasIssue = true;
-			matchIssue = hasIssue;
+			if (checkedIssues.includes("offline")) {
+				if (m.online) matchIssue = false;
+			}
+
+			if (matchIssue && checkedIssues.includes("high_latency")) {
+				if (!m.online || m.latency_ms <= configLatency) matchIssue = false;
+			}
+
+			if (matchIssue && checkedIssues.includes("high_traffic")) {
+				if (
+					!m.online ||
+					(m.rx_rate <= configBandwidth && m.tx_rate <= configBandwidth)
+				) {
+					matchIssue = false;
+				}
+			}
 		}
 
 		return matchSearch && matchType && matchProv && matchCity && matchIssue;
@@ -794,10 +870,32 @@ function renderMap(data) {
 
 			// [BARU] Gambar Garis dari HQ ke Node ini (Jika HQ sudah terload)
 			if (hqLocation && hqLocation.lat && hqLocation.lng) {
-				// Tentukan warna garis: Abu-abu jika online, Merah tipis jika offline
-				const lineColor = m.online ? "#94a3b8" : "#fecaca"; // Slate-400 vs Red-200
-				const lineDash = m.online ? null : "5, 5"; // Putus-putus jika offline
-				const lineOpacity = m.online ? 0.6 : 0.8;
+				// --- LOGIKA VISUAL GARIS ---
+				const isOnline = m.online;
+				const isHighLat = isOnline && m.latency_ms > configLatency;
+				const isHighTraf =
+					isOnline &&
+					(m.rx_rate > configBandwidth || m.tx_rate > configBandwidth);
+
+				let lineColor = "#94a3b8"; // Normal
+				let lineDash = null;
+				let lineOpacity = 0.4;
+				let lineWeight = 2;
+
+				if (!isOnline) {
+					lineColor = "#ef4444"; // Offline -> Merah
+					lineDash = "5, 10";
+					lineOpacity = 0.8;
+					lineWeight = 3;
+				} else if (isHighLat) {
+					lineColor = "#f59e0b"; // High Latency -> Orange
+					lineOpacity = 1.0;
+					lineWeight = 3;
+				} else if (isHighTraf) {
+					lineColor = "#3b82f6"; // High Traffic -> Biru
+					lineOpacity = 0.9;
+					lineWeight = 3;
+				}
 
 				L.polyline(
 					[
@@ -806,10 +904,11 @@ function renderMap(data) {
 					],
 					{
 						color: lineColor,
-						weight: 3, // [UBAH] Lebih tebal
+						weight: lineWeight,
 						opacity: lineOpacity,
 						dashArray: lineDash,
 						smoothFactor: 1,
+						interactive: false,
 					},
 				).addTo(connectionLinesLayer);
 			}
@@ -1433,6 +1532,11 @@ window.submitAdd = async function () {
 		return;
 	}
 
+	if (!isValidHost(host)) {
+		showToast("Format IP Address atau Hostname tidak valid!", "error");
+		return;
+	}
+
 	const type =
 		document.getElementById("addTypeSelect").value === "custom"
 			? document.getElementById("addTypeCustom").value
@@ -1458,7 +1562,6 @@ window.submitAdd = async function () {
 				host,
 				type,
 				icon: document.getElementById("addIcon").value,
-				use_snmp: document.getElementById("addUseSnmp").value,
 				lat,
 				lng,
 				notify_down,
@@ -1532,7 +1635,6 @@ window.submitEdit = async function () {
 				host: document.getElementById("editHost").value,
 				type,
 				icon: document.getElementById("editIcon").value,
-				use_snmp: document.getElementById("editUseSnmp").value,
 				lat,
 				lng,
 				notify_down,
@@ -1575,6 +1677,111 @@ window.submitDelete = async function () {
 		loadStatus();
 	} catch (e) {
 		showToast("Gagal", "error");
+	}
+};
+
+// --- [BARU] HQ MANAGEMENT FUNCTIONS ---
+
+// 1. Buka Modal Pengaturan
+window.openHQModal = function () {
+	if (!hqLocation) return;
+
+	// Set nilai form berdasarkan state saat ini
+	const mode = hqLocation.is_manual ? "manual" : "auto";
+	document.getElementById("hqMode").value = mode;
+
+	document.getElementById("hqCity").value = hqLocation.city || "";
+	document.getElementById("hqLat").value = hqLocation.lat || 0;
+	document.getElementById("hqLng").value = hqLocation.lng || 0;
+
+	toggleHQInputs(); // Atur visibilitas input
+	document.getElementById("hqModal").style.display = "flex";
+};
+
+// 2. Toggle Input Manual vs Auto
+window.toggleHQInputs = function () {
+	const mode = document.getElementById("hqMode").value;
+	const manualDiv = document.getElementById("hqManualInput");
+	manualDiv.style.display = mode === "manual" ? "block" : "none";
+};
+
+// 3. Simpan Pengaturan (Dari Modal)
+window.saveHQSettings = async function () {
+	const mode = document.getElementById("hqMode").value;
+	const payload = { mode: mode };
+
+	if (mode === "manual") {
+		const lat = parseFloat(document.getElementById("hqLat").value);
+		const lng = parseFloat(document.getElementById("hqLng").value);
+		const city = document.getElementById("hqCity").value.trim();
+
+		if (isNaN(lat) || isNaN(lng)) {
+			showToast("Koordinat tidak valid", "error");
+			return;
+		}
+
+		payload.lat = lat;
+		payload.lng = lng;
+		payload.city = city || "Lokasi Manual";
+		payload.region = "Manual";
+		payload.country = "ID";
+	}
+
+	try {
+		const res = await fetch("/api/hq", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(payload),
+		});
+
+		const data = await res.json();
+
+		if (res.ok) {
+			closeModal("hqModal");
+			showToast(data.message, "success");
+			// Reload lokasi baru
+			loadHQLocation();
+		} else {
+			showToast("Gagal menyimpan: " + data.error, "error");
+		}
+	} catch (e) {
+		console.error(e);
+		showToast("Error koneksi", "error");
+	}
+};
+
+// 4. Set HQ Langsung dari Peta (Shortcut)
+window.setHQFromMap = async function (lat, lng) {
+	if (!confirm(`Set lokasi ini (${lat}, ${lng}) sebagai Server Pusat?`)) return;
+
+	// Langsung kirim sebagai manual update
+	try {
+		const res = await fetch("/api/hq", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				mode: "manual",
+				lat: lat,
+				lng: lng,
+				city: "Lokasi Peta", // Default name
+				region: "",
+				country: "",
+			}),
+		});
+
+		if (res.ok) {
+			if (tempClickMarker) {
+				map.removeLayer(tempClickMarker);
+				tempClickMarker = null;
+			}
+			showToast("Lokasi Server Pusat diperbarui!", "success");
+			loadHQLocation(); // Refresh marker HQ & garis koneksi
+		} else {
+			showToast("Gagal update lokasi", "error");
+		}
+	} catch (e) {
+		console.error(e);
+		showToast("Error koneksi", "error");
 	}
 };
 

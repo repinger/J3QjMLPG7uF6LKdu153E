@@ -344,11 +344,16 @@
 								>
 									<i class="fas fa-cog"></i> Config Threshold
 								</button>
-								<div>
-									<button onclick="openGeoModal()" class="btn-secondary w-full">
-										<i class="fas fa-globe-asia"></i> Akses Provinsi
-									</button>
-								</div>
+								<button
+									onclick="openGeoModal()"
+									class="btn-secondary w-full"
+									style="margin-bottom: 8px"
+								>
+									<i class="fas fa-globe-asia"></i> Akses Provinsi
+								</button>
+								<button onclick="openHQModal()" class="btn-secondary w-full">
+									<i class="fas fa-map-marker-alt"></i> Lokasi Server Pusat
+								</button>
 							</div>
 						</aside>
 
@@ -466,13 +471,6 @@
 					<label>IP Address / Hostname</label
 					><input type="text" id="addHost" placeholder="Misal: 192.168.1.1" />
 				</div>
-				<div class="form-group">
-					<label>Metode Monitoring</label
-					><select id="addUseSnmp">
-						<option value="0">Ping Only (ICMP)</option>
-						<option value="1">Ping + Network Traffic (Prometheus)</option>
-					</select>
-				</div>
 				<div class="row">
 					<div class="form-group">
 						<label>Lat</label
@@ -569,13 +567,6 @@
 				</div>
 				<div class="form-group">
 					<label>IP Address</label><input type="text" id="editHost" />
-				</div>
-				<div class="form-group">
-					<label>Metode Monitoring</label
-					><select id="editUseSnmp">
-						<option value="0">Ping Only (ICMP)</option>
-						<option value="1">Ping + Network Traffic (Prometheus)</option>
-					</select>
 				</div>
 				<div class="row">
 					<div class="form-group">
@@ -827,6 +818,114 @@
 				<div id="geoRulesTable" style="max-height: 250px; overflow-y: auto">
 					<div style="text-align: center; color: #94a3b8">
 						Belum ada aturan.
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<div id="hqModal" class="modal">
+			<div class="modal-content small-modal">
+				<div class="modal-header">
+					<h3>Lokasi Server Pusat (HQ)</h3>
+					<span class="close-btn" onclick="closeModal('hqModal')">&times;</span>
+				</div>
+				<div style="padding: 15px">
+					<div class="form-group">
+						<label style="font-weight: 600">Mode Deteksi</label>
+						<select
+							id="hqMode"
+							class="form-control"
+							onchange="toggleHQInputs()"
+							style="
+								width: 100%;
+								padding: 8px;
+								border-radius: 4px;
+								border: 1px solid #cbd5e1;
+							"
+						>
+							<option value="auto">Otomatis (IP Geolocation)</option>
+							<option value="manual">Manual (Set Koordinat)</option>
+						</select>
+						<small style="color: #64748b; display: block; margin-top: 5px">
+							Mode <b>Otomatis</b> mendeteksi lokasi berdasarkan IP server.<br />
+							Mode <b>Manual</b> menggunakan koordinat tetap yang Anda tentukan.
+						</small>
+					</div>
+
+					<div
+						id="hqManualInput"
+						style="
+							display: none;
+							background: #f8fafc;
+							padding: 10px;
+							border-radius: 6px;
+							border: 1px solid #e2e8f0;
+						"
+					>
+						<div class="form-group">
+							<label>Label Lokasi (Kota/Gedung)</label>
+							<input
+								type="text"
+								id="hqCity"
+								placeholder="Contoh: Jakarta Data Center"
+								style="
+									width: 100%;
+									padding: 8px;
+									border: 1px solid #cbd5e1;
+									border-radius: 4px;
+								"
+							/>
+						</div>
+						<div class="row">
+							<div class="form-group">
+								<label>Latitude</label>
+								<input
+									type="text"
+									id="hqLat"
+									placeholder="-6.200000"
+									style="
+										width: 100%;
+										padding: 8px;
+										border: 1px solid #cbd5e1;
+										border-radius: 4px;
+									"
+								/>
+							</div>
+							<div class="form-group">
+								<label>Longitude</label>
+								<input
+									type="text"
+									id="hqLng"
+									placeholder="106.816666"
+									style="
+										width: 100%;
+										padding: 8px;
+										border: 1px solid #cbd5e1;
+										border-radius: 4px;
+									"
+								/>
+							</div>
+						</div>
+						<div style="text-align: right; margin-top: 5px">
+							<small
+								style="color: #2563eb; cursor: pointer"
+								onclick="
+									closeModal('hqModal');
+									showToast('Klik peta untuk memilih lokasi', 'info');
+								"
+							>
+								<i class="fas fa-map-pin"></i> Pilih lewat Peta
+							</small>
+						</div>
+					</div>
+
+					<div class="modal-actions">
+						<button class="btn-secondary" onclick="closeModal('hqModal')">
+							Batal
+						</button>
+						<button class="btn-primary" onclick="saveHQSettings()">
+							Simpan Perubahan
+						</button>
 					</div>
 				</div>
 			</div>

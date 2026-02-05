@@ -82,7 +82,8 @@ def callback():
 @bp.route('/logout')
 def logout():
     session.clear()
-    if Config.OIDC_LOGOUT_URL: return redirect(Config.OIDC_LOGOUT_URL)
+    if Config.OIDC_LOGOUT_URL:
+        return redirect(Config.OIDC_LOGOUT_URL)
     return redirect(url_for('routes.login_page'))
 
 @bp.route('/')

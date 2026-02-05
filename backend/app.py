@@ -8,72 +8,208 @@ import time
 import sqlite3
 import requests
 import json
+import os
+import re
+import ipaddress
 
 app = Flask(__name__)
 
+PROM_TARGETS_FILE = "/app/prom_targets/snmp_targets.json"
 MANAGER_API_URL = "http://app-manager:5001/api/groups"
+SNMP_EXPORTER_URL = "http://snmp-exporter:9116"
 
-# Init DB & Monitoring thread
-init_db()
-threading.Thread(target=monitor_loop, daemon=True).start()
-
-# --- [BARU] GLOBAL VAR & THREAD UNTUK DETEKSI PUBLIC IP (IPINFO.IO) ---
 HQ_INFO = {
     "lat": None,
     "lng": None,
     "city": "Unknown",
+    "region": "",
+    "country": "",
     "ip": "Unknown",
-    "org": ""
+    "org": "",
+    "is_manual": False  # Tambahkan flag ini untuk frontend
 }
 
-def detect_hq_location():
-    """
-    Mendeteksi Public IP dan Lokasi Server menggunakan ipinfo.io.
-    Dijalankan di background thread saat startup.
-    """
+def probe_snmp(machine_id, host):
+    print(f"[*] Probing SNMP capabilities for {host}...")
+    
+    time.sleep(2)
+    
+    try:
+        check_url = f"{SNMP_EXPORTER_URL}/snmp"
+        params = {
+            "target": host,
+            "module": "if_mib"
+        }
+        
+        resp = requests.get(check_url, params=params, timeout=10)
+        
+        if resp.status_code == 200 and len(resp.text) > 0:
+            print(f"[+] SNMP DETECTED for {host}! Enabling monitoring...")
+            
+            conn = get_db_connection()
+            conn.execute("UPDATE machines SET use_snmp = 1 WHERE id = ?", (machine_id,))
+            conn.commit()
+            conn.close()
+            
+            sync_prometheus_targets()
+        else:
+            print(f"[-] SNMP Probe failed for {host} (Status: {resp.status_code}). SNMP disabled.")
+            
+    except Exception as e:
+        print(f"[!] SNMP Probe Error for {host}: {str(e)}")
+
+def sync_prometheus_targets():
+    conn = get_db_connection()
+    try:
+        nodes = conn.execute("SELECT id, host, city, province FROM machines WHERE use_snmp = 1").fetchall()
+        
+        targets_list = []
+        
+        for node in nodes:
+            entry = {
+                "targets": [node['host']],
+                "labels": {
+                    "hostname": node['id'],
+                    "city": node['city'] or "Unknown",
+                    "province": node['province'] or "Unknown"
+                }
+            }
+            targets_list.append(entry)
+            
+        os.makedirs(os.path.dirname(PROM_TARGETS_FILE), exist_ok=True)
+        
+        with open(PROM_TARGETS_FILE, 'w') as f:
+            json.dump(targets_list, f, indent=2)
+            
+        print(f"[*] Prometheus targets updated: {len(targets_list)} nodes.")
+        
+    except Exception as e:
+        print(f"[!] Failed to sync Prometheus targets: {e}")
+    finally:
+        conn.close()
+
+def is_valid_host_or_ip(target):
+    try:
+        ipaddress.ip_address(target)
+        return True
+    except ValueError:
+        pass
+
+    if len(target) > 253:
+        return False
+    
+    hostname_regex = r"^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$|^localhost$"
+    
+    if re.match(hostname_regex, target):
+        return True
+        
+    return False
+
+def init_hq_location():
     global HQ_INFO
     try:
-        # Request ke ipinfo.io
-        resp = requests.get('https://ipinfo.io/json', timeout=10)
+        # Cek apakah mode manual aktif di database
+        is_manual = get_setting('hq_manual', '0')
         
-        if resp.status_code == 200:
-            data = resp.json()
-            # ipinfo mengembalikan "loc": "lat,lng" (string), perlu dipisah
-            loc_str = data.get('loc', '')
-            lat, lng = 0, 0
-            if ',' in loc_str:
-                try:
-                    parts = loc_str.split(',')
-                    lat = float(parts[0])
-                    lng = float(parts[1])
-                except ValueError:
-                    pass
+        if is_manual == '1':
+            print("[*] Loading Manual HQ Location from Database...")
+            HQ_INFO = {
+                "lat": float(get_setting('hq_lat', 0)),
+                "lng": float(get_setting('hq_lng', 0)),
+                "city": get_setting('hq_city', 'Manual Location'),
+                "region": get_setting('hq_region', ''),
+                "country": get_setting('hq_country', ''),
+                "ip": "Manual Override",
+                "org": "Internal",
+                "is_manual": True
+            }
+        else:
+            # Jika tidak manual, jalankan deteksi IP seperti biasa
+            print("[*] Auto-detecting HQ Location via ipinfo.io...")
+            resp = requests.get('https://ipinfo.io/json', timeout=10)
+            
+            if resp.status_code == 200:
+                data = resp.json()
+                loc_str = data.get('loc', '')
+                lat, lng = 0, 0
+                if ',' in loc_str:
+                    try:
+                        parts = loc_str.split(',')
+                        lat = float(parts[0])
+                        lng = float(parts[1])
+                    except ValueError:
+                        pass
 
+                HQ_INFO = {
+                    "lat": lat,
+                    "lng": lng,
+                    "city": data.get('city', 'Unknown'),
+                    "region": data.get('region', ''),
+                    "country": data.get('country', ''),
+                    "ip": data.get('ip', 'Unknown'),
+                    "org": data.get('org', ''),
+                    "is_manual": False
+                }
+                print(f"[*] HQ Location Detected: {HQ_INFO['city']}")
+            else:
+                print(f"[!] Failed to detect location: {resp.status_code}")
+            
+    except Exception as e:
+        print(f"[!] HQ Init Error: {e}")
+
+threading.Thread(target=init_hq_location, daemon=True).start()
+
+@app.route('/api/hq', methods=['POST'])
+def update_hq_location():
+    global HQ_INFO
+    data = request.json
+    
+    try:
+        mode = data.get('mode') # 'auto' atau 'manual'
+        
+        if mode == 'auto':
+            # Set setting ke auto dan reload
+            set_setting('hq_manual', '0')
+            # Panggil fungsi init ulang di thread terpisah atau langsung
+            threading.Thread(target=init_hq_location, daemon=True).start()
+            return jsonify({"success": True, "message": "Reverting to auto detection..."})
+            
+        elif mode == 'manual':
+            lat = float(data.get('lat'))
+            lng = float(data.get('lng'))
+            city = data.get('city', 'Manual Location')
+            
+            # Simpan ke Database (Settings)
+            set_setting('hq_manual', '1')
+            set_setting('hq_lat', lat)
+            set_setting('hq_lng', lng)
+            set_setting('hq_city', city)
+            set_setting('hq_region', data.get('region', ''))
+            set_setting('hq_country', data.get('country', ''))
+            
+            # Update Memory Global Langsung (agar tidak perlu restart)
             HQ_INFO = {
                 "lat": lat,
                 "lng": lng,
-                "city": data.get('city', 'Unknown'),
+                "city": city,
                 "region": data.get('region', ''),
                 "country": data.get('country', ''),
-                "ip": data.get('ip', 'Unknown'),
-                "org": data.get('org', '') # Nama ISP / Organisasi
+                "ip": "Manual Override",
+                "org": "Internal",
+                "is_manual": True
             }
-            print(f"[*] HQ Location Detected (ipinfo.io): {HQ_INFO['city']}, {HQ_INFO['region']} ({HQ_INFO['ip']})")
-        else:
-            print(f"[!] Failed to detect location: {resp.status_code}")
             
-    except Exception as e:
-        print(f"[!] HQ Detection Error: {e}")
+            return jsonify({"success": True, "message": "HQ Location updated manually"})
+            
+        return jsonify({"error": "Invalid mode"}), 400
 
-# Jalankan deteksi lokasi sekali saat startup
-threading.Thread(target=detect_hq_location, daemon=True).start()
+    except Exception as e:
+        print(f"[!] Update HQ Error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/hq', methods=['GET'])
 def get_hq_info():
-    """Endpoint untuk memberikan info lokasi server pusat"""
     return jsonify(HQ_INFO)
-
-# --------------------------------------------------------------------
 
 def get_setting(key, default_val):
     conn = get_db_connection()
@@ -87,9 +223,23 @@ def set_setting(key, value):
     conn.commit()
     conn.close()
 
+def get_allowed_provinces(conn, user_groups):
+    if not user_groups:
+        return []
+    
+    placeholders = ','.join(['?'] * len(user_groups))
+    query = f"""
+        SELECT DISTINCT province 
+        FROM province_rules 
+        WHERE group_pk IN ({placeholders}) 
+           OR group_name IN ({placeholders})
+    """
+    params = user_groups + user_groups
+    rows = conn.execute(query, params).fetchall()
+    return [r['province'] for r in rows]
+
 @app.route('/api/settings', methods=['GET'])
 def get_settings():
-    # Ambil dari DB, fallback ke Config default jika error
     lat_thresh = int(get_setting('latency_threshold', 100))
     bw_thresh = int(get_setting('bandwidth_threshold', 10000))
     return jsonify({
@@ -109,18 +259,12 @@ def update_settings():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-# --- HELPER: REVERSE GEOCODING (Nominatim - untuk Node biasa) ---
 def get_location_name(lat, lng):
-    """
-    Mengambil nama Kota dan Provinsi berdasarkan koordinat
-    menggunakan OpenStreetMap Nominatim API (Gratis).
-    """
     if not lat or not lng or lat == 0 or lng == 0:
         return "", ""
     
     try:
         url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={lat}&lon={lng}"
-        # Wajib menyertakan User-Agent agar tidak diblokir oleh OSM
         headers = {'User-Agent': 'Repinger-Monitor/1.0'}
         response = requests.get(url, headers=headers, timeout=5)
         
@@ -128,12 +272,9 @@ def get_location_name(lat, lng):
             data = response.json()
             address = data.get('address', {})
             
-            # Cari nama kota (bisa city, town, village, atau county)
             city = address.get('city') or address.get('town') or address.get('village') or address.get('county') or ""
-            # Cari nama provinsi
             state = address.get('state') or ""
             
-            # Bersihkan string (misal: "Kota Surabaya" -> "Surabaya")
             city = city.replace("Kota ", "").replace("Kabupaten ", "")
             
             return city, state
@@ -144,11 +285,7 @@ def get_location_name(lat, lng):
 
 @app.route('/api/admin/authentik-groups', methods=['GET'])
 def get_authentik_groups():
-    """
-    Proxy untuk mengambil daftar grup dari App Manager.
-    """
     try:
-        # Panggil endpoint yang baru kita buat di Langkah 1
         resp = requests.get(MANAGER_API_URL, timeout=5)
         if resp.status_code == 200:
             return jsonify(resp.json())
@@ -210,8 +347,6 @@ def manage_province_rules():
     finally:
         conn.close()
 
-# --- AUTH & NOTIFICATION ROUTES (TETAP SAMA) ---
-
 @app.route('/login', methods=['POST'])      
 @app.route('/api/auth/login', methods=['POST'])
 def login():
@@ -227,17 +362,107 @@ def login():
 
 @app.route('/api/alerts', methods=['GET'])
 def get_alerts():
+    # 1. Ambil Context User
+    current_user = request.headers.get('X-User-Name')
+    user_role = request.headers.get('X-User-Role', 'user')
+    user_groups_str = request.headers.get('X-User-Groups', '[]')
+    
+    if not current_user:
+        return jsonify({"alerts": [], "unread_count": 0})
+
+    try:
+        user_groups = json.loads(user_groups_str)
+    except:
+        user_groups = []
+
     conn = get_db_connection()
-    alerts = conn.execute("SELECT * FROM app_alerts ORDER BY id DESC LIMIT 10").fetchall()
-    unread = conn.execute("SELECT COUNT(*) FROM app_alerts WHERE is_read = 0").fetchone()[0]
+    
+    province_filter_sql = ""
+    province_params = []
+    
+    if user_role != 'admin':
+        allowed = get_allowed_provinces(conn, user_groups)
+        if not allowed:
+            conn.close()
+            return jsonify({"alerts": [], "unread_count": 0})
+        
+        placeholders = ','.join(['?'] * len(allowed))
+        province_filter_sql = f"AND m.province IN ({placeholders})"
+        province_params = allowed
+
+    query = f"""
+        SELECT a.id, a.machine_id, a.type, a.message, a.time,
+               m.host, m.city, m.province,
+               COALESCE(s.is_read, 0) as is_read
+        FROM app_alerts a
+        JOIN machines m ON a.machine_id = m.id
+        LEFT JOIN alert_status s ON a.id = s.alert_id AND s.username = ?
+        WHERE (s.is_cleared IS NULL OR s.is_cleared = 0)
+        {province_filter_sql}
+        ORDER BY a.id DESC LIMIT 20
+    """
+    
+    params = [current_user] + province_params
+    alerts = conn.execute(query, params).fetchall()
+    
+    unread_query = f"""
+        SELECT COUNT(*)
+        FROM app_alerts a
+        JOIN machines m ON a.machine_id = m.id
+        LEFT JOIN alert_status s ON a.id = s.alert_id AND s.username = ?
+        WHERE (s.is_read IS NULL OR s.is_read = 0)
+          AND (s.is_cleared IS NULL OR s.is_cleared = 0)
+          {province_filter_sql}
+    """
+    unread = conn.execute(unread_query, params).fetchone()[0]
+    
     conn.close()
     return jsonify({"alerts": [dict(a) for a in alerts], "unread_count": unread})
 
 @app.route('/api/alerts/read', methods=['POST'])
 def mark_alerts_read():
+    current_user = request.headers.get('X-User-Name')
+    user_role = request.headers.get('X-User-Role', 'user')
+    user_groups_str = request.headers.get('X-User-Groups', '[]')
+    
+    if not current_user: return jsonify({"success": False, "error": "No User Context"}), 403
+
     conn = get_db_connection()
     try:
-        conn.execute('UPDATE app_alerts SET is_read = 1')
+        province_join = ""
+        province_where = ""
+        province_params = []
+        
+        if user_role != 'admin':
+            user_groups = json.loads(user_groups_str) if user_groups_str else []
+            allowed = get_allowed_provinces(conn, user_groups)
+            if not allowed:
+                return jsonify({"success": True})
+            
+            placeholders = ','.join(['?'] * len(allowed))
+            province_join = "JOIN machines m ON a.machine_id = m.id"
+            province_where = f"AND m.province IN ({placeholders})"
+            province_params = allowed
+
+        query_ids = f"""
+            SELECT a.id FROM app_alerts a
+            {province_join}
+            LEFT JOIN alert_status s ON a.id = s.alert_id AND s.username = ?
+            WHERE (s.is_cleared IS NULL OR s.is_cleared = 0)
+            {province_where}
+        """
+        params_select = [current_user] + province_params
+        
+        pending_alerts = conn.execute(query_ids, params_select).fetchall()
+
+        for row in pending_alerts:
+            aid = row['id']
+            exists = conn.execute("SELECT 1 FROM alert_status WHERE alert_id=? AND username=?", (aid, current_user)).fetchone()
+            if exists:
+                conn.execute("UPDATE alert_status SET is_read=1 WHERE alert_id=? AND username=?", (aid, current_user))
+            else:
+                conn.execute("INSERT INTO alert_status (alert_id, username, is_read, is_cleared) VALUES (?, ?, 1, 0)", (aid, current_user))
+        
         conn.commit()
         return jsonify({"success": True})
     except Exception as e:
@@ -247,72 +472,75 @@ def mark_alerts_read():
 
 @app.route('/api/alerts/clear', methods=['POST'])
 def clear_alerts():
+    current_user = request.headers.get('X-User-Name')
+    user_role = request.headers.get('X-User-Role', 'user')
+    user_groups_str = request.headers.get('X-User-Groups', '[]')
+    
+    if not current_user: return jsonify({"success": False, "error": "No User Context"}), 403
+
+    conn = get_db_connection()
     try:
-        conn = get_db_connection()
-        conn.execute('DELETE FROM app_alerts')
+        province_join = ""
+        province_where = ""
+        province_params = []
+        
+        if user_role != 'admin':
+            user_groups = json.loads(user_groups_str) if user_groups_str else []
+            allowed = get_allowed_provinces(conn, user_groups)
+            if not allowed: return jsonify({"success": True})
+            
+            placeholders = ','.join(['?'] * len(allowed))
+            province_join = "JOIN machines m ON a.machine_id = m.id"
+            province_where = f"AND m.province IN ({placeholders})"
+            province_params = allowed
+
+        query_ids = f"""
+            SELECT a.id FROM app_alerts a
+            {province_join}
+            WHERE 1=1 {province_where}
+        """
+        pending_alerts = conn.execute(query_ids, province_params).fetchall()
+        
+        for row in pending_alerts:
+            aid = row['id']
+            exists = conn.execute("SELECT 1 FROM alert_status WHERE alert_id=? AND username=?", (aid, current_user)).fetchone()
+            if exists:
+                conn.execute("UPDATE alert_status SET is_cleared=1 WHERE alert_id=? AND username=?", (aid, current_user))
+            else:
+                conn.execute("INSERT INTO alert_status (alert_id, username, is_read, is_cleared) VALUES (?, ?, 1, 1)", (aid, current_user))
+
         conn.commit()
-        conn.close()
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        conn.close()
 
 @app.route('/api/status', methods=['GET'])
 def get_status():
     conn = get_db_connection()
-    
-    # 1. Ambil Context dari Header
     user_role = request.headers.get('X-User-Role', 'user')
     user_groups_str = request.headers.get('X-User-Groups', '[]')
-    
     try:
         user_groups = json.loads(user_groups_str)
     except:
         user_groups = []
 
-    # 2. Query Data Machines
     machines = conn.execute("SELECT * FROM machines").fetchall()
-    
-    # 3. Filtering Logic
     filtered_machines = []
     
     if user_role == 'admin':
-        # Admin melihat semua
         filtered_machines = machines
     else:
-        # User Biasa: Cek Province Rules
-        if not user_groups:
-            # Jika user tidak punya group, atau header gagal terkirim -> Tidak lihat apa-apa
-            allowed_provinces = []
-            print("[DEBUG] User has no groups, viewing nothing.")
-        else:
-            # Cari provinsi yang boleh dilihat oleh group user ini
-            # Menggunakan parameter binding untuk keamanan (mencegah SQL Injection via header)
-            placeholders = ','.join(['?'] * len(user_groups))
-            
-            # Kita cek berdasarkan group_pk ATAU group_name (untuk fleksibilitas)
-            query = f"""
-                SELECT DISTINCT province 
-                FROM province_rules 
-                WHERE group_pk IN ({placeholders}) 
-                   OR group_name IN ({placeholders})
-            """
-            # Parameter dikirim dua kali karena ada dua klausa IN
-            params = user_groups + user_groups
-            
-            rules = conn.execute(query, params).fetchall()
-            allowed_provinces = [r['province'] for r in rules]
-            print(f"[DEBUG] User Groups: {user_groups} -> Allowed: {allowed_provinces}")
-
-        # Filter array machines
+        allowed_provinces = get_allowed_provinces(conn, user_groups)
+        
         for m in machines:
             if m['province'] in allowed_provinces:
                 filtered_machines.append(m)
-
-    # 4. Format Output & History
+    
     result = []
     for m in filtered_machines:
         m_dict = dict(m)
-        # Ambil history hanya untuk machine yang lolos filter
         history = conn.execute("SELECT time, status, latency, rx, tx FROM history WHERE machine_id=? ORDER BY id DESC LIMIT 60", (m['id'],)).fetchall()
         m_dict['history'] = [dict(h) for h in reversed(history)]
         result.append(m_dict)
@@ -331,8 +559,6 @@ def get_history():
     conn.close()
     return jsonify([dict(r) for r in reversed(rows)])
 
-# --- MACHINE ROUTES ---
-
 @app.route('/add', methods=['POST'])
 @app.route('/api/add', methods=['POST'])
 def add_machine():
@@ -343,7 +569,9 @@ def add_machine():
     m_id = str(d['id']).strip()
     host = str(d['host']).strip()
 
-    # [BARU] Auto Detect Location
+    if not is_valid_host_or_ip(host):
+        return jsonify({"error": "Format Host atau IP Address tidak valid. Harap gunakan IP (misal: 192.168.1.1) atau Domain (misal: example.com)."}), 400
+
     lat = float(d.get('lat', 0))
     lng = float(d.get('lng', 0))
     city, province = get_location_name(lat, lng)
@@ -358,7 +586,9 @@ def add_machine():
 
         m_type = str(d.get('type', 'Device'))
         icon = str(d.get('icon', 'fa-server'))
-        use_snmp = int(d.get('use_snmp', 0))
+        
+        use_snmp = 0 
+        
         n_down = int(d.get('notify_down', 1))
         n_traf = int(d.get('notify_traffic', 1))
         n_email = int(d.get('notify_email', 0))
@@ -369,7 +599,10 @@ def add_machine():
             (m_id, host, m_type, icon, use_snmp, lat, lng, n_down, n_traf, n_email, city, province))
         
         conn.commit()
-        return jsonify({"message": f"Node Added at {city}, {province}" if city else "Node Added"})
+        
+        threading.Thread(target=probe_snmp, args=(m_id, host), daemon=True).start()
+
+        return jsonify({"message": f"Node Added. Detecting SNMP..."})
         
     except Exception as e:
         print(f"[!] Add Error: {e}")
@@ -383,6 +616,21 @@ def edit_machine():
     d = request.json
     m_id = d.get('id')
     host = d.get('host')
+
+    if not is_valid_host_or_ip(host):
+        return jsonify({"error": "Format Host atau IP Address tidak valid."}), 400
+    
+    conn = get_db_connection()
+    old_data = conn.execute("SELECT host, use_snmp FROM machines WHERE id=?", (m_id,)).fetchone()
+    conn.close()
+    
+    should_reprobe = False
+    use_snmp = int(old_data['use_snmp']) if old_data else 0
+    
+    if old_data and old_data['host'] != host:
+        # IP Berubah, reset SNMP status dan probe ulang
+        use_snmp = 0 
+        should_reprobe = True
 
     lat = float(d.get('lat', 0))
     lng = float(d.get('lng', 0))
@@ -398,11 +646,18 @@ def edit_machine():
             notify_down=?, notify_traffic=?, notify_email=?,
             city=?, province=?
             WHERE id=?''', 
-            (host, d['type'], d.get('icon'), int(d.get('use_snmp',0)), lat, lng,
+            (host, d['type'], d.get('icon'), use_snmp, lat, lng,
              int(d.get('notify_down', 1)), int(d.get('notify_traffic', 1)), int(d.get('notify_email', 0)),
              city, province,
              m_id))
         conn.commit()
+        
+        if should_reprobe:
+            sync_prometheus_targets() 
+            threading.Thread(target=probe_snmp, args=(m_id, host), daemon=True).start()
+        elif use_snmp == 1:
+            sync_prometheus_targets()
+        
         return jsonify({"message": "Node Updated"})
     except Exception as e:
         print(f"[!] Edit Error: {e}")
@@ -418,6 +673,9 @@ def remove_machine():
     try:
         conn.execute("DELETE FROM machines WHERE id=?", (d['id'],))
         conn.commit()
+        
+        sync_prometheus_targets()
+        
         return jsonify({"message": "Node Removed"})
     except Exception as e:
         print(f"[!] Remove Error: {e}")
@@ -436,4 +694,12 @@ def get_me():
     return jsonify({"username": "dev", "role": "admin"})
 
 if __name__ == '__main__':
+    init_db()
+
+    threading.Thread(target=monitor_loop, daemon=True).start()
+    threading.Thread(target=init_hq_location, daemon=True).start()
+    try:
+        sync_prometheus_targets()
+    except:
+        pass
     app.run(host=Config.FLASK_HOST, port=Config.FLASK_PORT)

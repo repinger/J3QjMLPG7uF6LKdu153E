@@ -18,6 +18,8 @@ const OIDC_CLIENT_ID = process.env.OIDC_CLIENT_ID;
 const OIDC_REDIRECT_URI =
 	process.env.OIDC_REDIRECT_URI || "http://localhost:3000/auth/callback";
 
+const OIDC_LOGOUT_URL = process.env.OIDC_LOGOUT_URL;
+
 // Turnstile Config
 const TURNSTILE_SECRET_KEY = process.env.TURNSTILE_SECRET_KEY;
 
@@ -133,10 +135,16 @@ app.get("/auth/callback", async (req, res) => {
 app.get("/auth/logout", (req, res) => {
 	req.session.destroy((err) => {
 		res.clearCookie("connect.sid");
+
 		res.set(
 			"Cache-Control",
 			"no-store, no-cache, must-revalidate, proxy-revalidate",
 		);
+
+		if (OIDC_LOGOUT_URL) {
+			return res.redirect(OIDC_LOGOUT_URL);
+		}
+
 		res.redirect("/login");
 	});
 });
@@ -149,25 +157,24 @@ const proxy = async (method, path, req, res) => {
 	try {
 		const headers = {};
 
-		// Cek apakah session user ada
 		if (req.session.user) {
-			// Kirim Role
 			headers["X-User-Role"] = req.session.user.role || "user";
 
-			// Kirim Groups (Array di-convert jadi JSON String)
-			// Karena kita sudah memperbaiki oidc_service.py, req.session.user.groups sekarang ADA isinya.
 			const groups = req.session.user.groups || [];
 			headers["X-User-Groups"] = JSON.stringify(groups);
 
-			// Debugging (Opsional: Cek di console server nodejs apakah groups terbaca)
-			// console.log("Proxying with groups:", headers['X-User-Groups']);
+			headers["X-User-Name"] =
+				req.session.user.preferred_username ||
+				req.session.user.email ||
+				req.session.user.sub ||
+				"unknown";
 		}
 
 		const response = await axios({
 			method,
 			url: `${PYTHON_API}${path}`,
 			data: req.body,
-			headers: headers, // Attach headers
+			headers: headers,
 		});
 		res.status(response.status).json(response.data);
 	} catch (e) {
@@ -200,6 +207,10 @@ app.get("/api/status", ensureAuthenticated, preventCache, (req, res) =>
 // Route Proxy untuk HQ
 app.get("/api/hq", ensureAuthenticated, preventCache, (req, res) =>
 	proxy("get", "/api/hq", req, res),
+);
+
+app.post("/api/hq", ensureAuthenticated, ensureAdmin, (req, res) =>
+	proxy("post", "/api/hq", req, res),
 );
 
 app.post("/api/history", ensureAuthenticated, (req, res) =>

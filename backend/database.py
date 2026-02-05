@@ -91,6 +91,18 @@ def init_db():
         )
     ''')
 
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS alert_status (
+            alert_id INTEGER,
+            username TEXT,
+            is_read BOOLEAN DEFAULT 0,
+            is_cleared BOOLEAN DEFAULT 0,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (alert_id, username),
+            FOREIGN KEY(alert_id) REFERENCES app_alerts(id) ON DELETE CASCADE
+        )
+    ''')
+
     # Seed Default Settings jika belum ada
     default_settings = [
         ('latency_threshold', '100'),      # ms

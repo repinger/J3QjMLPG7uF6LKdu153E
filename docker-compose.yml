@@ -91,6 +91,29 @@ services:
     networks:
       - project-1
 
+  influxdb:
+    container_name: influxdb
+    hostname: influxdb
+    image: influxdb:alpine
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUX_USERNAME}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUX_PASSWORD}
+      DOCKER_INFLUXDB_INIT_ORG: ${INFLUX_ORG}
+      DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUX_BUCKET}
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.influx.rule=Host(`influx.localhost`)
+      - traefik.http.routers.influx.entrypoints=web
+      - traefik.http.services.influx.loadbalancer.server.port=8086
+      - traefik.http.routers.influx.service=influx
+    networks:
+      - project-1
+    volumes:
+      - influxdb2-data:/var/lib/influxdb2
+      - influxdb2-config:/etc/influxdb2
+      - /etc/localtime:/etc/localtime:ro
+
   prometheus:
     container_name: prometheus
     hostname: prometheus
@@ -178,6 +201,7 @@ services:
       PYTHONIOENCODING: UTF-8
     volumes:
       - pinger:/db
+      - pinger-target:/app/prom_targets
       - ./.env:/app/.env:ro
       - /etc/localtime:/etc/localtime:ro
     networks:
@@ -210,12 +234,15 @@ services:
 
 volumes:
   pinger:
+  pinger-target:
   email:
   data:
   certs:
   custom-templates:
   database:
   manager:
+  influxdb2-data:
+  influxdb2-config:
   
 networks:
   project-1:
