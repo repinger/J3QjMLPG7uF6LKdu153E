@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify
 from config import Config
 from utils import login_required
-from database import get_db
+from database import get_db, get_all_divisions, add_division, delete_division
 from integrations import authentik, stalwart
 from actions import create_full_user_action, create_oidc_app_action
 import requests
@@ -98,22 +98,15 @@ def login_page():
 @login_required
 def dashboard():
     users = authentik.get_users()
-    
-    # 1. Ambil SEMUA grup (Data Mentah)
     all_raw_groups = authentik.get_groups()
-    
     apps = authentik.get_apps()
     providers = authentik.get_oauth_providers()
+    divisions = get_all_divisions()
     
-    # ... (kode mapping provider & inject app data tetap sama) ...
-    # Pastikan kode mapping provider_dict dll tetap ada di sini
     provider_dict = {p['pk']: p for p in providers}
     for app in apps:
-        # ... logic inject app ...
         prov_id = app.get('provider')
         prov_obj = provider_dict.get(prov_id)
-        # ... (dst logic app injection) ...
-        # (Saya singkat agar fokus ke perbaikan groups)
         if prov_obj:
             app['client_id'] = prov_obj.get('client_id')
             app['client_secret'] = prov_obj.get('client_secret')
@@ -135,19 +128,16 @@ def dashboard():
         bindings = authentik.get_policy_bindings_by_target(app['pk'])
         app['bound_group_ids'] = [b.get('group') for b in bindings if b.get('group')]
         bound_names = []
-        # Gunakan all_raw_groups untuk lookup nama binding agar nama group system tetap muncul di list app
         for bg_id in app['bound_group_ids']:
             g_obj = next((g for g in all_raw_groups if g['pk'] == bg_id), None)
             if g_obj: bound_names.append(g_obj['name'])
         app['bound_group_names'] = ", ".join(bound_names)
 
-    # --- SAFETY FILTERING ---
     
     current_user = session.get('user')
     current_roles = session.get('roles', []) 
     manager_client_id = Config.OIDC_CLIENT_ID
 
-    # 1. Filter Users (Sembunyikan diri sendiri)
     if current_user:
         users = [u for u in users if u.get('username') != current_user]
 
@@ -166,14 +156,12 @@ def dashboard():
     apps = [a for a in apps if a.get('client_id') != manager_client_id]
     providers = [p for p in providers if p.get('client_id') != manager_client_id]
 
-    # PASSING KE TEMPLATE
-    # groups     -> Gunakan 'groups_for_table' (yang sudah difilter) agar Tab Groups bersih.
-    # all_groups -> Gunakan 'all_raw_groups' (lengkap) agar Dropdown Create App bisa pilih semua grup.
     return render_template('dashboard.html', 
                            users=users, 
-                           groups=groups_for_table, 
-                           all_groups=all_raw_groups, # <--- VARIABEL BARU
-                           apps=apps)
+                           groups=groups_for_table,
+                           all_groups=all_raw_groups, 
+                           apps=apps,
+                           divisions=divisions)
 
 @bp.route('/invite', methods=['POST'])
 @login_required
@@ -215,6 +203,7 @@ This invitation is valid for 24 hours.
 @bp.route('/register', methods=['GET', 'POST'])
 def register():
     token = request.args.get('token') or request.form.get('token')
+
     if not token: return render_template('error.html', message="Missing Token"), 400
     
     conn = get_db()
@@ -223,14 +212,18 @@ def register():
     conn.close()
     
     if not row or row[3] == 1: return render_template('error.html', message="Invalid/Used Token"), 403
+
+    divisions = get_all_divisions()
+
+    if request.method == 'GET': 
+        return render_template('register.html', token=token, email=row[0], divisions=divisions)
     
-    if request.method == 'GET': return render_template('register.html', token=token, email=row[0])
-    
+    name = request.form.get('name')
     username = request.form.get('username')
     password = request.form.get('password')
     confirm = request.form.get('confirm_password')
     phone = request.form.get('phone')
-    division = request.form.get('division')
+    division_code = request.form.get('division')
     dob_str = request.form.get('dob')
     
     # VALIDASI 1: Cek Password Match
@@ -247,18 +240,23 @@ def register():
         flash("Invalid phone number format. Use 08... or +62...", "danger")
         return render_template('register.html', token=token, email=row[0])
     
+    valid_codes = [d['code'] for d in divisions]
+    if division_code not in valid_codes:
+         flash("Invalid Division selected.", "danger")
+         return render_template('register.html', token=token, email=row[0], divisions=divisions)
+    
     try:
         dob_obj = datetime.strptime(dob_str, '%Y-%m-%d')
     except ValueError:
         flash("Invalid Date of Birth.", "danger")
-        return render_template('register.html', token=token, email=row[0])
+        return render_template('register.html', token=token, email=row[0], divisions=divisions)
     
-    count_division = 0
-    nip = generate_nip(division, dob_obj, count_division)
+    count_division = 0 
+    nip = generate_nip(division_code, dob_obj, count_division)
 
     system_email = f"{username}@{Config.MAIL_DOMAIN}"
     success, _, _ = create_full_user_action(
-        username, username, system_email, password, row[1], 
+        username, name, system_email, password, row[1], 
         phone=phone, nip=nip
     )
     
@@ -271,6 +269,36 @@ def register():
     else:
         flash("Registration failed. Username might be taken.", "danger")
         return render_template('register.html', token=token, email=row[0])
+
+@bp.route('/division/create', methods=['POST'])
+@login_required
+def division_create():
+    name = request.form.get('name')
+    code = request.form.get('code')
+    
+    # Validasi input sederhana
+    if not name or not code:
+        flash("Name and Code are required.", "danger")
+        return redirect(url_for('routes.dashboard'))
+        
+    if len(code) != 2 or not code.isdigit():
+        flash("Code must be exactly 2 digits (e.g., 01, 99).", "danger")
+        return redirect(url_for('routes.dashboard'))
+
+    success, msg = add_division(name, code)
+    if success:
+        flash(f"Division '{name}' added.", "success")
+    else:
+        flash(f"Error: {msg}", "danger")
+        
+    return redirect(url_for('routes.dashboard'))
+
+@bp.route('/division/delete/<int:id>', methods=['POST'])
+@login_required
+def division_delete(id):
+    delete_division(id)
+    flash("Division deleted.", "success")
+    return redirect(url_for('routes.dashboard'))
 
 @bp.route('/create', methods=['POST'])
 @login_required

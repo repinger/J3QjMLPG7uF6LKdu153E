@@ -52,9 +52,71 @@
 				<button class="tab-btn" onclick="openTab('tab-apps')">
 					Applications
 				</button>
+				<button class="tab-btn" onclick="openTab('tab-divisions')">
+					Divisions
+				</button>
 				<button class="tab-btn" onclick="openTab('tab-invite')">
 					Invitations
 				</button>
+			</div>
+
+			<div id="tab-divisions" class="tab-content">
+				<div class="card">
+					<div class="toolbar">
+						<h3>Manage Divisions</h3>
+						<button
+							onclick="openModal('modal-create-division')"
+							class="btn btn-primary"
+						>
+							<i class="fas fa-plus"></i> New Division
+						</button>
+					</div>
+
+					<table>
+						<thead>
+							<tr>
+								<th>Code</th>
+								<th>Division Name</th>
+								<th style="text-align: right">Actions</th>
+							</tr>
+						</thead>
+						<tbody>
+							{% for div in divisions %}
+							<tr>
+								<td>
+									<span
+										class="badge"
+										style="background: #f1f5f9; color: #64748b"
+										>{{ div.code }}</span
+									>
+								</td>
+								<td style="font-weight: 600">{{ div.name }}</td>
+								<td style="text-align: right">
+									<form
+										action="{{ url_for('routes.division_delete', id=div.id) }}"
+										method="POST"
+										style="display: inline"
+										onsubmit="return confirm('Delete division?');"
+									>
+										<button class="btn btn-danger btn-sm">
+											<i class="fas fa-trash"></i>
+										</button>
+									</form>
+								</td>
+							</tr>
+							{% else %}
+							<tr>
+								<td
+									colspan="3"
+									style="text-align: center; color: var(--text-sub)"
+								>
+									No divisions found.
+								</td>
+							</tr>
+							{% endfor %}
+						</tbody>
+					</table>
+				</div>
 			</div>
 
 			<div id="tab-users" class="tab-content active">
@@ -829,6 +891,56 @@
 						Close
 					</button>
 				</div>
+			</div>
+		</div>
+
+		<div id="modal-create-division" class="modal">
+			<div class="modal-content">
+				<div class="modal-header">
+					<h3>Add New Division</h3>
+					<span class="close" onclick="closeModal('modal-create-division')"
+						>&times;</span
+					>
+				</div>
+				<form action="{{ url_for('routes.division_create') }}" method="POST">
+					<div class="modal-body">
+						<div class="form-group">
+							<label>Division Name</label>
+							<input
+								type="text"
+								name="name"
+								class="form-control"
+								placeholder="e.g. Marketing"
+								required
+							/>
+						</div>
+						<div class="form-group">
+							<label>Division Code (2 Digits)</label>
+							<input
+								type="text"
+								name="code"
+								class="form-control"
+								placeholder="e.g. 04"
+								maxlength="2"
+								pattern="\d{2}"
+								required
+							/>
+							<small style="color: #64748b"
+								>Used for NIP generation (First 2 digits).</small
+							>
+						</div>
+					</div>
+					<div class="modal-footer">
+						<button
+							type="button"
+							class="btn btn-secondary"
+							onclick="closeModal('modal-create-division')"
+						>
+							Cancel
+						</button>
+						<button type="submit" class="btn btn-primary">Save Division</button>
+					</div>
+				</form>
 			</div>
 		</div>
 

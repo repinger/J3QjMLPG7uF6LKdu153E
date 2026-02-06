@@ -12,12 +12,10 @@
 			href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
 			rel="stylesheet"
 		/>
-
 		<link
 			href="{{ url_for('static', filename='css/style.css') }}"
 			rel="stylesheet"
 		/>
-
 		<script
 			src="https://challenges.cloudflare.com/turnstile/v0/api.js"
 			async
@@ -25,18 +23,18 @@
 		></script>
 
 		<style>
-			/* [FIX LAYOUT] Paksa horizontal layout */
 			body {
 				flex-direction: row !important;
 				overflow: hidden;
 				width: 100vw;
 				height: 100vh;
 				margin: 0;
+				background: #f8fafc;
 			}
 
-			/* Panel Kiri - Tema Hijau */
+			/* --- PANEL KIRI (Hijau) --- */
 			.split-left {
-				flex: 1;
+				flex: 0.8;
 				background-color: #10b981;
 				background-image: radial-gradient(
 					rgba(255, 255, 255, 0.2) 1px,
@@ -50,112 +48,138 @@
 				justify-content: space-between;
 			}
 
-			/* Panel Kanan - Form */
+			/* --- PANEL KANAN (Form) --- */
 			.split-right {
-				flex: 1;
+				flex: 1.2;
 				background: #ffffff;
 				display: flex;
 				align-items: center;
 				justify-content: center;
 				padding: 2rem;
+				overflow-y: auto;
 			}
 
 			.form-container {
 				width: 100%;
-				max-width: 400px;
+				max-width: 550px;
 			}
 
-			.form-group {
-				margin-bottom: 1.25rem;
+			/* --- GRID SYSTEM --- */
+			.form-grid {
+				display: grid;
+				grid-template-columns: 1fr 1fr; /* 2 Kolom */
+				gap: 1rem;
 			}
+
+			.col-span-2 {
+				grid-column: span 2;
+			}
+
+			.section-title {
+				font-size: 0.75rem;
+				text-transform: uppercase;
+				letter-spacing: 0.05em;
+				color: #94a3b8;
+				font-weight: 700;
+				margin-top: 1.5rem;
+				margin-bottom: 0.75rem;
+				border-bottom: 1px solid #e2e8f0;
+				padding-bottom: 0.25rem;
+				grid-column: span 2;
+			}
+			.section-title:first-child {
+				margin-top: 0;
+			}
+
+			/* --- INPUT STYLING --- */
 			label {
 				display: block;
-				margin-bottom: 0.5rem;
+				margin-bottom: 0.35rem;
 				font-weight: 600;
-				font-size: 0.9rem;
-				color: var(--text-main);
+				font-size: 0.85rem;
+				color: #334155;
 			}
 
 			.input-wrapper {
 				position: relative;
 			}
 
-			/* Styling Ikon */
 			.input-wrapper i {
 				position: absolute;
-				left: 16px;
+				left: 14px;
 				top: 50%;
 				transform: translateY(-50%);
 				color: #94a3b8;
 				pointer-events: none;
-				z-index: 10; /* Pastikan ikon di atas input */
+				font-size: 0.9rem;
 			}
 
-			/* [FIX BENTROK ICON] Selector diperkuat + !important agar menang dari style.css */
-			.input-wrapper input {
+			.input-wrapper input,
+			.input-wrapper select {
 				width: 100%;
-				padding: 0.9rem 1rem 0.9rem 3rem !important; /* Padding kiri 3rem wajib! */
-				border: 1.5px solid var(--border);
-				border-radius: 10px;
-				font-size: 1rem;
+				padding: 0.75rem 1rem 0.75rem 2.5rem !important;
+				border: 1px solid #cbd5e1;
+				border-radius: 8px;
+				font-size: 0.95rem;
 				font-family: inherit;
-				background: white;
+				background: #fff;
+				transition: all 0.2s;
+				box-sizing: border-box;
 			}
 
-			.input-wrapper input:focus {
+			.input-wrapper input:focus,
+			.input-wrapper select:focus {
 				outline: none;
 				border-color: #10b981;
-				box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.1);
+				box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
 			}
 
 			button {
 				width: 100%;
-				padding: 1rem;
+				padding: 0.9rem;
 				background: #10b981;
 				color: white;
 				border: none;
-				border-radius: 10px;
+				border-radius: 8px;
 				font-weight: 600;
 				font-size: 1rem;
 				cursor: pointer;
-				margin-top: 1rem;
+				margin-top: 1.5rem;
 				transition: background 0.2s;
 			}
 			button:hover {
 				background: #059669;
 			}
 
-			.brand-large {
-				font-size: 1.5rem;
-				font-weight: 700;
-				display: flex;
-				align-items: center;
-				gap: 10px;
-			}
-			.quote {
-				font-size: 2rem;
-				font-weight: 700;
-				line-height: 1.2;
-				margin-bottom: 1rem;
-			}
-
 			@media (max-width: 900px) {
 				.split-left {
 					display: none;
+				}
+				.form-grid {
+					grid-template-columns: 1fr;
+				}
+				.col-span-2 {
+					grid-column: span 1;
+				}
+				body {
+					overflow-y: auto;
 				}
 			}
 		</style>
 	</head>
 	<body>
 		<div class="split-left">
-			<div class="brand-large">
+			<div style="font-size: 1.5rem; font-weight: 700">
 				<i class="fas fa-user-plus"></i> Monitorr Access
 			</div>
 			<div>
-				<div class="quote">Welcome Aboard.</div>
-				<div style="opacity: 0.9; font-size: 1.1rem">
-					Complete your profile to access the dashboard.
-				</div>
+				<h1 style="font-size: 2.5rem; margin: 0 0 1rem 0; line-height: 1.1">
+					Join the<br />Team.
+				</h1>
+				<p style="opacity: 0.9; font-size: 1.1rem; line-height: 1.6">
+					Create your employee account to access the internal dashboard and
+					resources.
+				</p>
 			</div>
 			<div style="font-size: 0.85rem; opacity: 0.6">
 				&copy; 2026 Monitorr Inc.
@@ -164,20 +188,26 @@
 
 		<div class="split-right">
 			<div class="form-container">
-				<h2 style="font-size: 1.8rem; margin: 0 0 0.5rem 0; color: #0f172a">
-					Setup Account
-				</h2>
-				<p style="color: #64748b; margin-bottom: 2rem">
-					For email: <strong>{{ email }}</strong>
-				</p>
+				<div style="margin-bottom: 2rem">
+					<h2 style="font-size: 1.8rem; margin: 0; color: #0f172a">
+						Setup Profile
+					</h2>
+					<p style="color: #64748b; margin-top: 0.5rem; font-size: 0.95rem">
+						Registering email:
+						<strong style="color: #10b981">{{ email }}</strong>
+					</p>
+				</div>
 
 				{% with messages = get_flashed_messages(with_categories=true) %} {% if
 				messages %} {% for category, message in messages %}
 				<div
-					style="padding: 12px; border-radius: 8px; font-size: 0.9rem; margin-bottom: 1rem;
+					style="padding: 12px; border-radius: 8px; font-size: 0.9rem; margin-bottom: 1.5rem;
                         background: {{ '#fef2f2' if category == 'danger' else '#ecfdf5' }};
-                        color: {{ '#991b1b' if category == 'danger' else '#065f46' }};"
+                        color: {{ '#991b1b' if category == 'danger' else '#065f46' }}; border: 1px solid {{ '#fecaca' if category == 'danger' else '#a7f3d0' }};"
 				>
+					<i
+						class="fas {{ 'fa-exclamation-circle' if category == 'danger' else 'fa-check-circle' }}"
+					></i>
 					{{ message }}
 				</div>
 				{% endfor %} {% endif %} {% endwith %}
@@ -185,93 +215,97 @@
 				<form action="/register" method="POST">
 					<input type="hidden" name="token" value="{{ token }}" />
 
-					<div class="form-group">
-						<label>Username</label>
-						<div class="input-wrapper">
-							<input
-								type="text"
-								name="username"
-								placeholder="Choose a username"
-								required
-							/>
-							<i class="fas fa-user"></i>
+					<div class="form-grid">
+						<div class="section-title">Personal Information</div>
+
+						<div class="col-span-2">
+							<label>Full Name</label>
+							<div class="input-wrapper">
+								<input
+									type="text"
+									name="name"
+									placeholder="e.g. John Doe"
+									required
+								/>
+								<i class="fas fa-id-card"></i>
+							</div>
+						</div>
+
+						<div>
+							<label>Date of Birth</label>
+							<div class="input-wrapper">
+								<input type="date" name="dob" required />
+							</div>
+						</div>
+
+						<div>
+							<label>Phone Number</label>
+							<div class="input-wrapper">
+								<input type="tel" name="phone" placeholder="08..." required />
+								<i class="fas fa-phone"></i>
+							</div>
+						</div>
+
+						<div class="col-span-2">
+							<label>Division</label>
+							<div class="input-wrapper">
+								<select name="division" required>
+									<option value="" disabled selected>Select Department</option>
+									{% for div in divisions %}
+									<option value="{{ div.code }}">
+										{{ div.code }} - {{ div.name }}
+									</option>
+									{% endfor %}
+								</select>
+								<i class="fas fa-building"></i>
+							</div>
+						</div>
+
+						<div class="section-title">Account Security</div>
+
+						<div class="col-span-2">
+							<label>Username</label>
+							<div class="input-wrapper">
+								<input
+									type="text"
+									name="username"
+									placeholder="Choose a username"
+									required
+								/>
+								<i class="fas fa-user"></i>
+							</div>
+						</div>
+
+						<div>
+							<label>Password</label>
+							<div class="input-wrapper">
+								<input
+									type="password"
+									name="password"
+									placeholder="Min. 8 chars"
+									minlength="8"
+									required
+								/>
+								<i class="fas fa-lock"></i>
+							</div>
+						</div>
+
+						<div>
+							<label>Confirm Password</label>
+							<div class="input-wrapper">
+								<input
+									type="password"
+									name="confirm_password"
+									placeholder="Repeat password"
+									minlength="8"
+									required
+								/>
+								<i class="fas fa-check-circle"></i>
+							</div>
 						</div>
 					</div>
 
-					<div class="form-group">
-						<label>Nomor Telepon</label>
-						<div class="input-wrapper">
-							<input
-								type="tel"
-								name="phone"
-								placeholder="08123456789"
-								required
-							/>
-							<i class="fas fa-phone"></i>
-						</div>
-					</div>
-
-					<div class="form-group">
-						<label>Divisi</label>
-						<div class="input-wrapper">
-							<select
-								name="division"
-								style="
-									width: 100%;
-									padding: 0.9rem 1rem 0.9rem 3rem;
-									border: 1.5px solid var(--border);
-									border-radius: 10px;
-									background: white;
-								"
-								required
-							>
-								<option value="" disabled selected>Select Division</option>
-								<option value="01">IT / Engineering</option>
-								<option value="02">HR / SDM</option>
-								<option value="03">Finance</option>
-								<option value="04">Umum</option>
-							</select>
-							<i class="fas fa-building"></i>
-						</div>
-					</div>
-
-					<div class="form-group">
-						<label>Tanggal Lahir</label>
-						<div class="input-wrapper">
-							<input type="date" name="dob" required />
-							<i class="fas fa-calendar"></i>
-						</div>
-					</div>
-
-					<div class="form-group">
-						<label>Password</label>
-						<div class="input-wrapper">
-							<input
-								type="password"
-								name="password"
-								placeholder="Min. 8 characters"
-								minlength="8"
-								required
-							/>
-							<i class="fas fa-lock"></i>
-						</div>
-					</div>
-
-					<div class="form-group">
-						<label>Confirm Password</label>
-						<div class="input-wrapper">
-							<input
-								type="password"
-								name="confirm_password"
-								placeholder="Repeat password"
-								minlength="8"
-								required
-							/>
-							<i class="fas fa-check-circle"></i>
-						</div>
-					</div>
-
-					<div style="margin-top: 1rem; display: flex; justify-content: center">
+					<div style="margin-top: 2rem; display: flex; justify-content: center">
 						<div
 							class="cf-turnstile"
 							data-sitekey="0x4AAAAAACS8-Z3nEddcM630"
