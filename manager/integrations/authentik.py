@@ -73,11 +73,34 @@ def get_users(admin_group_pk=None):
         print(f"[!] Get Users Error: {e}")
     return []
 
-def create_user(username, name, email, group_pk=None):
+import requests
+from config import Config
+
+def create_user(username, name, email, group_pk=None, attributes=None):
     url = f"{Config.AUTHENTIK_API_URL}/core/users/"
-    payload = {"username": username, "name": name, "email": email, "is_active": True}
-    if group_pk: payload["groups"] = [group_pk]
-    return requests.post(url, json=payload, headers=get_headers())
+    payload = {
+        "username": username,
+        "name": name,
+        "email": email,
+        "is_active": True,
+    }
+    
+    if group_pk:
+        payload["groups"] = [group_pk]
+        
+    if attributes:
+        payload["attributes"] = attributes
+        
+    try:
+        response = requests.post(url, json=payload, headers=get_headers())
+        return response
+    except Exception as e:
+        print(f"[!] Authentik Connection Error: {e}")
+        class MockResponse:
+            status_code = 500
+            text = str(e)
+            def json(self): return {"detail": str(e)}
+        return MockResponse()
 
 def set_password(user_pk, password):
     url = f"{Config.AUTHENTIK_API_URL}/core/users/{user_pk}/set_password/"

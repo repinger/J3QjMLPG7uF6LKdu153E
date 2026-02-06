@@ -9,6 +9,7 @@ import uuid
 import smtplib
 from email.mime.text import MIMEText
 from datetime import datetime, timedelta
+from utils import validate_phone, generate_nip
 
 # Definisikan Blueprint 'routes'
 bp = Blueprint('routes', __name__)
@@ -227,7 +228,10 @@ def register():
     
     username = request.form.get('username')
     password = request.form.get('password')
-    confirm = request.form.get('confirm_password') # Ambil input konfirmasi
+    confirm = request.form.get('confirm_password')
+    phone = request.form.get('phone')
+    division = request.form.get('division')
+    dob_str = request.form.get('dob')
     
     # VALIDASI 1: Cek Password Match
     if password != confirm:
@@ -238,9 +242,25 @@ def register():
     if len(password) < 8:
         flash("Password must be at least 8 characters.", "danger")
         return render_template('register.html', token=token, email=row[0])
+    
+    if not validate_phone(phone):
+        flash("Invalid phone number format. Use 08... or +62...", "danger")
+        return render_template('register.html', token=token, email=row[0])
+    
+    try:
+        dob_obj = datetime.strptime(dob_str, '%Y-%m-%d')
+    except ValueError:
+        flash("Invalid Date of Birth.", "danger")
+        return render_template('register.html', token=token, email=row[0])
+    
+    count_division = 0
+    nip = generate_nip(division, dob_obj, count_division)
 
     system_email = f"{username}@{Config.MAIL_DOMAIN}"
-    success, _, _ = create_full_user_action(username, username, system_email, password, row[1])
+    success, _, _ = create_full_user_action(
+        username, username, system_email, password, row[1], 
+        phone=phone, nip=nip
+    )
     
     if success:
         conn = get_db()

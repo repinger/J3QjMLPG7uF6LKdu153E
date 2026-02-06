@@ -12,30 +12,29 @@ def ensure_url(url):
         return f"https://{url}"
     return url
 
-def create_full_user_action(username, name, email, password, group_pk=None):
-    # 1. Create User di Authentik
-    auth_res = authentik.create_user(username, name, email, group_pk)
+def create_full_user_action(username, name, email, password, group_pk=None, phone=None, nip=None):
+    custom_attributes = {}
+
+    if phone:
+        custom_attributes['phone_number'] = phone
+    if nip:
+        custom_attributes['nip'] = nip
     
+    auth_res = authentik.create_user(username, name, email, group_pk, attributes=custom_attributes)
     if auth_res.status_code not in [200, 201]:
         return False, auth_res, None
         
     user_pk = auth_res.json().get('pk')
     
-    # 2. Set Password di Authentik
     if user_pk: 
         pass_res = authentik.set_password(user_pk, password)
-        
-        # [FIX] Authentik bisa return 204 (No Content) jika sukses.
-        # Jadi kita harus anggap 200 DAN 204 sebagai sukses.
+
         if pass_res.status_code not in [200, 204]:
-            # ROLLBACK: Hapus user jika password gagal (misal complexity error)
             authentik.delete_user(user_pk)
             return False, pass_res, None
     else:
-        # Safety fallback
         return False, auth_res, None
     
-    # 3. Create Mailbox di Stalwart
     stal_res = stalwart.create_mailbox(username, name, password, email)
     
     return True, auth_res, stal_res

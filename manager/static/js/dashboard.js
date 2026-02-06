@@ -1,4 +1,3 @@
-// Tab Navigation Logic
 function openTab(tabId) {
 	document
 		.querySelectorAll(".tab-content")
@@ -17,7 +16,6 @@ function openTab(tabId) {
 	}
 }
 
-// Modal Helpers
 function closeModal(modalId) {
 	document.getElementById(modalId).style.display = "none";
 }
@@ -29,28 +27,24 @@ function openModal(modalId) {
 function openEditGroup(pk, name, parentPks) {
 	const form = document.getElementById("form-edit-group");
 	const inputName = document.getElementById("edit-group-name");
-	const selectParents = document.getElementById("edit-group-parents"); // [BARU]
+	const selectParents = document.getElementById("edit-group-parents");
 
 	if (form && inputName) {
 		form.action = "/group/edit/" + pk;
 		inputName.value = name;
 
-		// [LOGIK BARU] Handle Multiple Selection
 		if (selectParents) {
-			// 1. Reset selection
 			for (let i = 0; i < selectParents.options.length; i++) {
 				selectParents.options[i].selected = false;
-				selectParents.options[i].disabled = false; // Reset disabled status
+				selectParents.options[i].disabled = false;
 			}
 
-			// 2. Disable opsi "Diri Sendiri" agar tidak loop
 			for (let i = 0; i < selectParents.options.length; i++) {
 				if (selectParents.options[i].value === pk) {
 					selectParents.options[i].disabled = true;
 				}
 			}
 
-			// 3. Select parents yang sudah ada
 			if (parentPks && Array.isArray(parentPks)) {
 				for (let i = 0; i < selectParents.options.length; i++) {
 					if (parentPks.includes(selectParents.options[i].value)) {
@@ -69,26 +63,21 @@ function openEditApp(pk, name, url, redirectUris, boundGroupIds) {
 	const inputName = document.getElementById("edit-app-name");
 	const inputUrl = document.getElementById("edit-app-url");
 	const inputRedirects = document.getElementById("edit-app-redirects");
-	const selectGroups = document.getElementById("edit-app-groups"); // Input baru
+	const selectGroups = document.getElementById("edit-app-groups");
 
 	if (form) {
-		// 1. Set Action URL & Text Inputs
 		form.action = "/app/edit/" + pk;
 		if (inputName) inputName.value = name;
 		if (inputUrl) inputUrl.value = url;
 		if (inputRedirects) inputRedirects.value = redirectUris || "";
 
-		// 2. Handle Group Selection (Multi-select Logic)
 		if (selectGroups) {
-			// Reset semua pilihan terlebih dahulu
 			for (let i = 0; i < selectGroups.options.length; i++) {
 				selectGroups.options[i].selected = false;
 			}
 
-			// Jika ada data boundGroupIds (array), pilih opsi yang sesuai
 			if (boundGroupIds && Array.isArray(boundGroupIds)) {
 				for (let i = 0; i < selectGroups.options.length; i++) {
-					// Jika value option ada di dalam array boundGroupIds, set selected=true
 					if (boundGroupIds.includes(selectGroups.options[i].value)) {
 						selectGroups.options[i].selected = true;
 					}
@@ -100,7 +89,6 @@ function openEditApp(pk, name, url, redirectUris, boundGroupIds) {
 	}
 }
 
-// Edit User Handler
 function openEditUser(pk, name, email) {
 	const form = document.getElementById("form-edit-user");
 	const inputName = document.getElementById("edit-name");
@@ -114,14 +102,12 @@ function openEditUser(pk, name, email) {
 	}
 }
 
-// Close modal if clicked outside content
 window.onclick = function (event) {
 	if (event.target.classList.contains("modal")) {
 		event.target.style.display = "none";
 	}
 };
 
-// Default Tab on Load
 document.addEventListener("DOMContentLoaded", () => {
 	if (!document.querySelector(".tab-content.active")) {
 		openTab("tab-users");
@@ -142,12 +128,11 @@ function openAppInfo(name, clientId, clientSecret, issuer, authUrl, tokenUrl) {
 function copyToClipboard(elementId) {
 	const copyText = document.getElementById(elementId);
 	copyText.select();
-	copyText.setSelectionRange(0, 99999); // Untuk mobile
+	copyText.setSelectionRange(0, 99999);
 
 	try {
 		navigator.clipboard.writeText(copyText.value);
 
-		// Efek visual tombol berubah jadi centang sebentar
 		const btn = copyText.nextElementSibling;
 		const originalHtml = btn.innerHTML;
 		btn.innerHTML = '<i class="fas fa-check" style="color: green;"></i>';
