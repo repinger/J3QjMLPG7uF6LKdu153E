@@ -133,8 +133,8 @@
 					<table>
 						<thead>
 							<tr>
-								<th>User</th>
-								<th>Email</th>
+								<th>User Details</th>
+								<th>Attributes</th>
 								<th>Status</th>
 								<th>Groups</th>
 								<th style="text-align: right">Actions</th>
@@ -144,26 +144,76 @@
 							{% for user in users if not user.is_protected %}
 							<tr>
 								<td>
-									<div style="font-weight: 600">{{ user.username }}</div>
-									<div style="font-size: 0.8rem; color: var(--text-sub)">
-										{{ user.name }}
+									<div style="font-weight: 600">{{ user.name }}</div>
+									<div style="font-size: 0.85rem; color: #475569">
+										@{{ user.username }}
+									</div>
+									<div
+										style="
+											font-size: 0.8rem;
+											font-family: monospace;
+											color: var(--text-sub);
+											margin-top: 2px;
+										"
+									>
+										{{ user.email }}
 									</div>
 								</td>
-								<td style="font-family: monospace">{{ user.email }}</td>
+
 								<td>
-									{% if user.is_active %}<span class="badge bg-green"
-										>Active</span
-									>
-									{% else %}<span class="badge" style="background: #e2e8f0"
-										>Inactive</span
-									>{% endif %}
+									<div style="font-size: 0.85rem">
+										<span
+											style="
+												color: var(--text-sub);
+												width: 40px;
+												display: inline-block;
+											"
+											>NIP</span
+										>
+										<span style="font-weight: 500"
+											>: {{ user.attributes.get('nip', '-') }}</span
+										>
+									</div>
+									<div style="font-size: 0.85rem">
+										<span
+											style="
+												color: var(--text-sub);
+												width: 40px;
+												display: inline-block;
+											"
+											>Tel</span
+										>
+										<span style="font-weight: 500"
+											>: {{ user.attributes.get('phone_number', '-') }}</span
+										>
+									</div>
 								</td>
-								<td>{{ user.groups|length }} Groups</td>
+
+								<td>
+									{% if user.is_active %}
+									<span class="badge bg-green">Active</span>
+									{% else %}
+									<span
+										class="badge"
+										style="background: #e2e8f0; color: #64748b"
+										>Inactive</span
+									>
+									{% endif %}
+								</td>
+								<td>
+									<span
+										class="badge"
+										style="background: #f1f5f9; color: #475569"
+									>
+										{{ user.groups|length }} Groups
+									</span>
+								</td>
 								<td style="text-align: right">
 									<button
 										onclick="openEditUser('{{ user.pk }}', '{{ user.name }}', '{{ user.email }}')"
 										class="btn btn-sm"
 										style="background: #eff6ff; color: var(--primary)"
+										title="Edit User"
 									>
 										<i class="fas fa-edit"></i>
 									</button>
@@ -171,14 +221,14 @@
 										action="/delete/{{ user.pk }}"
 										method="POST"
 										style="display: inline"
-										onsubmit="return confirm('Delete user?');"
+										onsubmit="return confirm('Delete user {{ user.username }}? This action cannot be undone.');"
 									>
 										<input
 											type="hidden"
 											name="username_hidden"
 											value="{{ user.username }}"
 										/>
-										<button class="btn btn-danger btn-sm">
+										<button class="btn btn-danger btn-sm" title="Delete User">
 											<i class="fas fa-trash"></i>
 										</button>
 									</form>
@@ -205,39 +255,78 @@
 						<thead>
 							<tr>
 								<th>Group Name</th>
+								<th>Parent Group</th>
 								<th>Type</th>
 								<th style="text-align: right">Actions</th>
 							</tr>
 						</thead>
 						<tbody>
-							{# --- [SAFE] Tabel ini menggunakan variabel 'groups' yang sudah
-							difilter --- #} {% for group in groups %}
+							{% for group in groups %}
 							<tr>
 								<td style="font-weight: 600">{{ group.name }}</td>
+
 								<td>
-									{% if group.is_superuser %}<span
+									{% if group.parent_names_str != "-" %}
+									<span
+										style="
+											font-size: 0.85rem;
+											background: #f1f5f9;
+											padding: 2px 6px;
+											border-radius: 4px;
+											color: #475569;
+										"
+									>
+										<i
+											class="fas fa-level-up-alt"
+											style="margin-right: 4px"
+										></i>
+										{{ group.parent_names_str }}
+									</span>
+									{% else %}
+									<span style="color: #cbd5e1">-</span>
+									{% endif %}
+								</td>
+
+								<td>
+									{% if group.is_superuser %}
+									<span
 										class="badge"
 										style="background: #fef3c7; color: #b45309"
 										>Superuser</span
 									>
-									{% else %}<span
+									{% else %}
+									<span
 										class="badge"
 										style="background: #f1f5f9; color: #64748b"
 										>Standard</span
-									>{% endif %}
+									>
+									{% endif %}
 								</td>
+
 								<td style="text-align: right">
 									<button
 										onclick='openEditGroup(
-            "{{ group.pk }}", 
-            "{{ group.name }}", 
-            {{ group.parents | tojson }}
-        )'
+                        "{{ group.pk }}", 
+                        "{{ group.name }}", 
+                        {{ group.parents | tojson }}
+                    )'
 										class="btn btn-sm"
 										style="background: #eff6ff; color: var(--primary)"
+										title="Edit Group"
 									>
 										<i class="fas fa-edit"></i>
 									</button>
+
+									<form
+										action="{{ url_for('routes.group_delete', pk=group.pk) }}"
+										method="POST"
+										style="display: inline"
+										onsubmit="return confirm('Are you sure you want to delete group &quot;{{ group.name }}&quot;?');"
+									>
+										<button class="btn btn-danger btn-sm" title="Delete Group">
+											<i class="fas fa-trash"></i>
+										</button>
+									</form>
 								</td>
 							</tr>
 							{% endfor %}

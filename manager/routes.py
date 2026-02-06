@@ -152,7 +152,18 @@ def dashboard():
         and g['name'] not in current_roles
     ]
 
-    # 3. Filter Apps & Providers (Sembunyikan App Manager ini sendiri)
+    group_map = {g['pk']: g['name'] for g in all_raw_groups}
+
+    for g in groups_for_table:
+        parent_names = []
+        current_parents = g.get('parents', [])
+        
+        for p_pk in current_parents:
+            p_name = group_map.get(p_pk)
+            if p_name:
+                parent_names.append(p_name)
+        g['parent_names_str'] = ", ".join(parent_names) if parent_names else "-"
+
     apps = [a for a in apps if a.get('client_id') != manager_client_id]
     providers = [p for p in providers if p.get('client_id') != manager_client_id]
 
